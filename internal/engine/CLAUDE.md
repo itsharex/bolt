@@ -6,7 +6,7 @@ Core download engine — orchestrates the full download lifecycle.
 
 | File | Purpose |
 |---|---|
-| `engine.go` | Engine struct, AddDownload, Start/Pause/Resume/Cancel/Shutdown |
+| `engine.go` | Engine struct, AddDownload, Start/Pause/Resume/Cancel/Shutdown, ProbeURL |
 | `segment.go` | segmentWorker — per-segment goroutine with retry logic |
 | `progress.go` | progressAggregator — collects reports, emits events, persists to DB |
 | `probe.go` | HEAD request probing (with GET fallback on 405) |
@@ -42,6 +42,8 @@ When `AcceptsRanges=false` or `TotalSize=-1`: use 1 segment, no Range header.
 
 `Shutdown()` cancels all contexts → waits for goroutines (10s timeout) → persists progress → sets status to paused → closes files.
 
-## Phase 2 Changes
+## Phase 2 Additions
 
-Engine interface stays identical. Only the calling layer changes — CLI will become an HTTP client instead of embedding the engine directly.
+- `ProbeURL(ctx, rawURL, headers)` — wraps package-level `Probe()` with engine's HTTP client (used by server's `/api/probe`)
+- `PauseDownload` now publishes `event.DownloadPaused`
+- `ResumeDownload` now publishes `event.DownloadResumed`

@@ -4,11 +4,19 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/fhsinchy/bolt/internal/event"
 	"github.com/fhsinchy/bolt/internal/model"
 )
 
-func formatProgressBar(p event.Progress, filename string) string {
+// progressEvent holds progress data extracted from WebSocket messages.
+type progressEvent struct {
+	Downloaded int64
+	TotalSize  int64
+	Speed      int64
+	ETA        int
+	Status     string
+}
+
+func formatProgressBar(p progressEvent, filename string) string {
 	var pct float64
 	var pctStr string
 	if p.TotalSize > 0 {
@@ -48,5 +56,9 @@ func formatCompleted(filename string) string {
 }
 
 func formatFailed(downloadID, errMsg string) string {
-	return fmt.Sprintf("\nDownload %s failed: %s\n", downloadID[:12], errMsg)
+	id := downloadID
+	if len(id) > 12 {
+		id = id[:12]
+	}
+	return fmt.Sprintf("\nDownload %s failed: %s\n", id, errMsg)
 }

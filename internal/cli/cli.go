@@ -1,70 +1,55 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
-	"path/filepath"
 	"text/tabwriter"
+	"time"
+
+	"nhooyr.io/websocket"
 
 	"github.com/fhsinchy/bolt/internal/config"
-	"github.com/fhsinchy/bolt/internal/db"
-	"github.com/fhsinchy/bolt/internal/engine"
-	"github.com/fhsinchy/bolt/internal/event"
 	"github.com/fhsinchy/bolt/internal/model"
-	"github.com/fhsinchy/bolt/internal/queue"
 )
 
-// CLI holds the components needed for CLI commands.
-type CLI struct {
-	store  *db.Store
-	cfg    *config.Config
-	bus    *event.Bus
-	eng    *engine.Engine
-	queue  *queue.Manager
-	dbPath string
+// Client is an HTTP client that talks to the bolt daemon.
+type Client struct {
+	baseURL string
+	token   string
+	http    *http.Client
 }
 
-// New creates a new CLI instance, opening the database and loading config.
-func New() (*CLI, error) {
-	cfgPath := config.DefaultPath()
-	cfg, err := config.Load(cfgPath)
+// NewClient creates a new Client by loading config for port and token.
+func NewClient() (*Client, error) {
+	cfg, err := config.Load(config.DefaultPath())
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
 
-	dbPath := filepath.Join(config.Dir(), "bolt.db")
-	store, err := db.Open(dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("opening database: %w", err)
-	}
-
-	bus := event.NewBus()
-	eng := engine.New(store, cfg, bus)
-
-	var queueMgr *queue.Manager
-	queueMgr = queue.New(store, bus, cfg.MaxConcurrent, func(ctx context.Context, id string) error {
-		return eng.StartDownload(ctx, id)
-	})
-
-	return &CLI{
-		store:  store,
-		cfg:    cfg,
-		bus:    bus,
-		eng:    eng,
-		queue:  queueMgr,
-		dbPath: dbPath,
+	return &Client{
+		baseURL: fmt.Sprintf("http://127.0.0.1:%d", cfg.ServerPort),
+		token:   cfg.AuthToken,
+		http:    &http.Client{Timeout: 30 * time.Second},
 	}, nil
 }
 
-// Close releases CLI resources.
-func (c *CLI) Close() {
-	c.store.Close()
+// CheckDaemon verifies the daemon is running by hitting /api/stats.
+func (c *Client) CheckDaemon() error {
+	_, err := c.get(context.Background(), "/api/stats")
+	if err != nil {
+		return fmt.Errorf("daemon not running (is 'bolt start' running?): %w", err)
+	}
+	return nil
 }
 
-// Add adds a download and starts it.
-func (c *CLI) Add(ctx context.Context, opts AddOptions) error {
+// Add adds a download via the daemon API and optionally shows progress.
+func (c *Client) Add(ctx context.Context, opts AddOptions) error {
 	req := model.AddRequest{
 		URL:      opts.URL,
 		Filename: opts.Filename,
@@ -80,10 +65,24 @@ func (c *CLI) Add(ctx context.Context, opts AddOptions) error {
 		req.Headers["Referer"] = opts.Referer
 	}
 
-	dl, err := c.eng.AddDownload(ctx, req)
+	resp, err := c.post(ctx, "/api/downloads", req)
 	if err != nil {
-		return fmt.Errorf("adding download: %w", err)
+		return err
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		return readError(resp)
+	}
+
+	var result struct {
+		Download model.Download `json:"download"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+
+	dl := result.Download
 
 	if opts.JSON {
 		return json.NewEncoder(os.Stdout).Encode(dl)
@@ -96,58 +95,47 @@ func (c *CLI) Add(ctx context.Context, opts AddOptions) error {
 	fmt.Printf("  Dir:      %s\n", dl.Dir)
 	fmt.Println()
 
-	// Start the download
-	if err := c.eng.StartDownload(ctx, dl.ID); err != nil {
-		return fmt.Errorf("starting download: %w", err)
-	}
-
-	// Subscribe to events and show progress
-	ch, subID := c.bus.Subscribe()
-	defer c.bus.Unsubscribe(subID)
-
-	for evt := range ch {
-		switch e := evt.(type) {
-		case event.Progress:
-			if e.DownloadID == dl.ID {
-				fmt.Print(formatProgressBar(e, dl.Filename))
-			}
-		case event.DownloadCompleted:
-			if e.DownloadID == dl.ID {
-				fmt.Print(formatCompleted(dl.Filename))
-				return nil
-			}
-		case event.DownloadFailed:
-			if e.DownloadID == dl.ID {
-				fmt.Print(formatFailed(dl.ID, e.Error))
-				return fmt.Errorf("download failed: %s", e.Error)
-			}
-		}
-	}
-
-	return nil
+	// Connect to WebSocket and show progress for this download.
+	return c.watchProgress(ctx, dl.ID, dl.Filename)
 }
 
 // List shows downloads matching the filter.
-func (c *CLI) List(ctx context.Context, opts ListOptions) error {
-	downloads, err := c.eng.ListDownloads(ctx, model.ListFilter{
-		Status: opts.Status,
-	})
+func (c *Client) List(ctx context.Context, opts ListOptions) error {
+	path := "/api/downloads"
+	if opts.Status != "" {
+		path += "?status=" + url.QueryEscape(opts.Status)
+	}
+
+	resp, err := c.get(ctx, path)
 	if err != nil {
-		return fmt.Errorf("listing downloads: %w", err)
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return readError(resp)
+	}
+
+	var result struct {
+		Downloads []model.Download `json:"downloads"`
+		Total     int              `json:"total"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode response: %w", err)
 	}
 
 	if opts.JSON {
-		return json.NewEncoder(os.Stdout).Encode(downloads)
+		return json.NewEncoder(os.Stdout).Encode(result.Downloads)
 	}
 
-	if len(downloads) == 0 {
+	if len(result.Downloads) == 0 {
 		fmt.Println("No downloads found.")
 		return nil
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tFILENAME\tSIZE\tPROGRESS\tSTATUS")
-	for _, dl := range downloads {
+	for _, dl := range result.Downloads {
 		id := dl.ID
 		if len(id) > 12 {
 			id = id[:12]
@@ -173,12 +161,26 @@ func (c *CLI) List(ctx context.Context, opts ListOptions) error {
 }
 
 // Status shows detailed info for a single download.
-func (c *CLI) Status(ctx context.Context, id string) error {
-	dl, segments, err := c.eng.GetDownload(ctx, id)
+func (c *Client) Status(ctx context.Context, id string) error {
+	resp, err := c.get(ctx, "/api/downloads/"+id)
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return readError(resp)
+	}
+
+	var result struct {
+		Download model.Download  `json:"download"`
+		Segments []model.Segment `json:"segments"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+
+	dl := result.Download
 	fmt.Printf("ID:           %s\n", dl.ID)
 	fmt.Printf("URL:          %s\n", dl.URL)
 	fmt.Printf("Filename:     %s\n", dl.Filename)
@@ -195,11 +197,11 @@ func (c *CLI) Status(ctx context.Context, id string) error {
 		fmt.Printf("Error:        %s\n", dl.Error)
 	}
 
-	if len(segments) > 0 {
+	if len(result.Segments) > 0 {
 		fmt.Println("\nSegments:")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "  #\tRANGE\tDOWNLOADED\tDONE")
-		for _, seg := range segments {
+		for _, seg := range result.Segments {
 			size := seg.EndByte - seg.StartByte + 1
 			var pct string
 			if size > 0 {
@@ -224,27 +226,31 @@ func (c *CLI) Status(ctx context.Context, id string) error {
 }
 
 // Pause pauses a download.
-func (c *CLI) Pause(ctx context.Context, id string) error {
-	if err := c.eng.PauseDownload(ctx, id); err != nil {
+func (c *Client) Pause(ctx context.Context, id string) error {
+	resp, err := c.post(ctx, "/api/downloads/"+id+"/pause", nil)
+	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return readError(resp)
+	}
+
 	fmt.Printf("Paused: %s\n", id)
 	return nil
 }
 
-// Resume resumes a download.
-func (c *CLI) Resume(ctx context.Context, id string, showProgress bool) error {
-	if id == "all" {
-		return c.resumeAll(ctx)
-	}
-
-	dl, err := c.store.GetDownload(ctx, id)
+// Resume resumes a download and optionally shows progress.
+func (c *Client) Resume(ctx context.Context, id string, showProgress bool) error {
+	resp, err := c.post(ctx, "/api/downloads/"+id+"/resume", nil)
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
-	if err := c.eng.ResumeDownload(ctx, id); err != nil {
-		return err
+	if resp.StatusCode != http.StatusOK {
+		return readError(resp)
 	}
 
 	if !showProgress {
@@ -252,59 +258,40 @@ func (c *CLI) Resume(ctx context.Context, id string, showProgress bool) error {
 		return nil
 	}
 
-	// Show progress
-	ch, subID := c.bus.Subscribe()
-	defer c.bus.Unsubscribe(subID)
-
-	for evt := range ch {
-		switch e := evt.(type) {
-		case event.Progress:
-			if e.DownloadID == id {
-				fmt.Print(formatProgressBar(e, dl.Filename))
-			}
-		case event.DownloadCompleted:
-			if e.DownloadID == id {
-				fmt.Print(formatCompleted(dl.Filename))
-				return nil
-			}
-		case event.DownloadFailed:
-			if e.DownloadID == id {
-				fmt.Print(formatFailed(id, e.Error))
-				return fmt.Errorf("download failed: %s", e.Error)
-			}
-		}
-	}
-
-	return nil
-}
-
-func (c *CLI) resumeAll(ctx context.Context) error {
-	downloads, err := c.store.ListDownloads(ctx, string(model.StatusPaused), 0, 0)
+	// Get download info for filename.
+	dlResp, err := c.get(ctx, "/api/downloads/"+id)
 	if err != nil {
-		return err
-	}
-
-	if len(downloads) == 0 {
-		fmt.Println("No paused downloads to resume.")
+		fmt.Printf("Resumed: %s\n", id)
 		return nil
 	}
+	defer dlResp.Body.Close()
 
-	for _, dl := range downloads {
-		if err := c.eng.ResumeDownload(ctx, dl.ID); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to resume %s: %v\n", dl.ID[:12], err)
-			continue
-		}
-		fmt.Printf("Resumed: %s (%s)\n", dl.ID[:12], dl.Filename)
+	var result struct {
+		Download model.Download `json:"download"`
 	}
+	json.NewDecoder(dlResp.Body).Decode(&result)
 
-	return nil
+	fmt.Printf("Resumed: %s\n", id)
+	return c.watchProgress(ctx, id, result.Download.Filename)
 }
 
 // Cancel cancels a download.
-func (c *CLI) Cancel(ctx context.Context, id string, deleteFile bool) error {
-	if err := c.eng.CancelDownload(ctx, id, deleteFile); err != nil {
+func (c *Client) Cancel(ctx context.Context, id string, deleteFile bool) error {
+	path := "/api/downloads/" + id
+	if deleteFile {
+		path += "?delete_file=true"
+	}
+
+	resp, err := c.del(ctx, path)
+	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return readError(resp)
+	}
+
 	fmt.Printf("Cancelled: %s\n", id)
 	if deleteFile {
 		fmt.Println("  File deleted.")
@@ -313,17 +300,150 @@ func (c *CLI) Cancel(ctx context.Context, id string, deleteFile bool) error {
 }
 
 // Refresh refreshes the URL for a failed download.
-func (c *CLI) Refresh(ctx context.Context, id, newURL string) error {
-	if err := c.eng.RefreshURL(ctx, id, newURL); err != nil {
+func (c *Client) Refresh(ctx context.Context, id, newURL string) error {
+	body := map[string]string{"url": newURL}
+	resp, err := c.post(ctx, "/api/downloads/"+id+"/refresh", body)
+	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return readError(resp)
+	}
+
 	fmt.Printf("URL refreshed for %s. Use 'bolt resume %s' to continue.\n", id, id)
 	return nil
 }
 
-// Shutdown gracefully shuts down the engine.
-func (c *CLI) Shutdown(ctx context.Context) error {
-	return c.eng.Shutdown(ctx)
+// watchProgress connects to the WebSocket and displays progress for a download.
+func (c *Client) watchProgress(ctx context.Context, downloadID, filename string) error {
+	wsURL := fmt.Sprintf("ws%s/ws?token=%s",
+		c.baseURL[len("http"):], // "://127.0.0.1:6800"
+		url.QueryEscape(c.token),
+	)
+
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		return nil // WebSocket is optional; don't fail the command.
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	for {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			return nil
+		}
+
+		var msg map[string]any
+		if err := json.Unmarshal(data, &msg); err != nil {
+			continue
+		}
+
+		msgID, _ := msg["download_id"].(string)
+		if msgID != downloadID {
+			continue
+		}
+
+		switch msg["type"] {
+		case "progress":
+			downloaded, _ := msg["downloaded"].(float64)
+			totalSize, _ := msg["total_size"].(float64)
+			speed, _ := msg["speed"].(float64)
+			eta, _ := msg["eta"].(float64)
+			status, _ := msg["status"].(string)
+
+			p := progressEvent{
+				Downloaded: int64(downloaded),
+				TotalSize:  int64(totalSize),
+				Speed:      int64(speed),
+				ETA:        int(eta),
+				Status:     status,
+			}
+			fmt.Print(formatProgressBar(p, filename))
+
+		case "download_completed":
+			fmt.Print(formatCompleted(filename))
+			return nil
+
+		case "download_failed":
+			errMsg, _ := msg["error"].(string)
+			fmt.Print(formatFailed(downloadID, errMsg))
+			return fmt.Errorf("download failed: %s", errMsg)
+
+		case "download_paused":
+			fmt.Printf("\nDownload %s paused\n", downloadID[:12])
+			return nil
+		}
+	}
+}
+
+// HTTP helpers
+
+func (c *Client) get(ctx context.Context, path string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	return c.http.Do(req)
+}
+
+func (c *Client) post(ctx context.Context, path string, body any) (*http.Response, error) {
+	var r io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		r = bytes.NewReader(data)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, r)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	return c.http.Do(req)
+}
+
+func (c *Client) put(ctx context.Context, path string, body any) (*http.Response, error) {
+	var r io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		r = bytes.NewReader(data)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.baseURL+path, r)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+	return c.http.Do(req)
+}
+
+func (c *Client) del(ctx context.Context, path string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	return c.http.Do(req)
+}
+
+// readError extracts an error message from a non-OK HTTP response.
+func readError(resp *http.Response) error {
+	var body struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return fmt.Errorf("%s: %s", body.Code, body.Error)
 }
 
 // AddOptions holds flags for the add command.

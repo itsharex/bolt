@@ -286,7 +286,11 @@ func (e *Engine) PauseDownload(ctx context.Context, id string) error {
 		if dl.Status == model.StatusCompleted {
 			return model.ErrAlreadyCompleted
 		}
-		return e.store.UpdateDownloadStatus(ctx, id, model.StatusPaused, "")
+		if err := e.store.UpdateDownloadStatus(ctx, id, model.StatusPaused, ""); err != nil {
+			return err
+		}
+		e.bus.Publish(event.DownloadPaused{DownloadID: id})
+		return nil
 	}
 
 	// Cancel the context to stop all workers
@@ -305,6 +309,8 @@ func (e *Engine) PauseDownload(ctx context.Context, id string) error {
 	e.mu.Lock()
 	delete(e.active, id)
 	e.mu.Unlock()
+
+	e.bus.Publish(event.DownloadPaused{DownloadID: id})
 
 	return nil
 }
@@ -327,6 +333,8 @@ func (e *Engine) ResumeDownload(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("loading segments: %w", err)
 	}
+
+	e.bus.Publish(event.DownloadResumed{DownloadID: id})
 
 	return e.startDownload(ctx, dl, segments)
 }
@@ -453,6 +461,13 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 	e.mu.Unlock()
 
 	return nil
+}
+
+// ProbeURL sends a HEAD request (with GET fallback) to discover metadata
+// about the resource at rawURL. This method wraps the package-level Probe
+// function, providing the engine's HTTP client.
+func (e *Engine) ProbeURL(ctx context.Context, rawURL string, headers map[string]string) (*model.ProbeResult, error) {
+	return Probe(ctx, e.client, rawURL, headers)
 }
 
 // IsActive returns whether a download is currently running.

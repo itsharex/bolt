@@ -1,29 +1,30 @@
 # internal/cli
 
-CLI command implementations. Embeds the engine directly (Phase 1 design).
+CLI client that talks to the bolt daemon via HTTP API and WebSocket.
 
-## CLI Struct
+## Client Struct
 
-`New()` opens DB, loads config, creates engine + queue manager. `Close()` releases DB.
+`NewClient()` loads config for server port + auth token. No DB access — all operations go through the HTTP API.
 
 ## Commands
 
 | Method | CLI Command | Behavior |
 |---|---|---|
-| `Add` | `bolt add <url>` | Probe → add → start → show progress until done |
-| `List` | `bolt list` | Tabwriter output with ID, filename, size, progress%, status |
-| `Status` | `bolt status <id>` | Detailed view with per-segment info |
-| `Pause` | `bolt pause <id>` | Pause active or queued download |
-| `Resume` | `bolt resume <id\|all>` | Resume with progress display |
-| `Cancel` | `bolt cancel <id>` | Stop + delete from DB, optional `--delete-file` |
-| `Refresh` | `bolt refresh <id> <url>` | Update URL for failed download |
+| `Add` | `bolt add <url>` | POST /api/downloads → print info → WebSocket progress |
+| `List` | `bolt list` | GET /api/downloads → tabwriter output |
+| `Status` | `bolt status <id>` | GET /api/downloads/{id} → detailed view |
+| `Pause` | `bolt pause <id>` | POST /api/downloads/{id}/pause |
+| `Resume` | `bolt resume <id>` | POST /api/downloads/{id}/resume → optional WebSocket progress |
+| `Cancel` | `bolt cancel <id>` | DELETE /api/downloads/{id} |
+| `Refresh` | `bolt refresh <id> <url>` | POST /api/downloads/{id}/refresh |
+| `Stop` | `bolt stop` | Read PID file → SIGTERM → poll until stopped |
 
 ## Progress Display (`progress.go`)
 
 Terminal progress bar: `\r[filename] ████░░ 47% | 50 MB/100 MB | 12.3 MB/s | ETA 4s`
 
-Subscribes to event bus, renders on `Progress` events, prints final line on `DownloadCompleted`.
+Connects to WebSocket, filters events by download ID, renders progress until completed/failed.
 
-## Phase 2 Changes
+## HTTP Helpers
 
-This package will be refactored to make HTTP calls to the daemon instead of embedding the engine. The user-facing output stays the same.
+`get`, `post`, `put`, `del` — all attach Bearer token. `readError` extracts error from JSON response.

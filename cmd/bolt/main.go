@@ -3,40 +3,70 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/fhsinchy/bolt/internal/cli"
+	"github.com/fhsinchy/bolt/internal/config"
+	"github.com/fhsinchy/bolt/internal/db"
+	"github.com/fhsinchy/bolt/internal/engine"
+	"github.com/fhsinchy/bolt/internal/event"
+	"github.com/fhsinchy/bolt/internal/pid"
+	"github.com/fhsinchy/bolt/internal/queue"
+	"github.com/fhsinchy/bolt/internal/server"
 )
 
-const version = "0.1.0-dev"
+const version = "0.2.0-dev"
 
 func main() {
 	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(1)
+		// No args — launch headless daemon.
+		launchHeadless()
+		return
 	}
 
 	cmd := os.Args[1]
 	args := os.Args[2:]
 
 	switch cmd {
+	case "start":
+		launchHeadless()
+	case "stop":
+		runStop()
 	case "add":
-		runAdd(args)
+		runWithClient(func(ctx context.Context, c *cli.Client) error {
+			return runAdd(ctx, c, args)
+		})
 	case "list", "ls":
-		runList(args)
+		runWithClient(func(ctx context.Context, c *cli.Client) error {
+			return runList(ctx, c, args)
+		})
 	case "status":
-		runStatus(args)
+		runWithClient(func(ctx context.Context, c *cli.Client) error {
+			return runStatus(ctx, c, args)
+		})
 	case "pause":
-		runPause(args)
+		runWithClient(func(ctx context.Context, c *cli.Client) error {
+			return runPause(ctx, c, args)
+		})
 	case "resume":
-		runResume(args)
+		runWithClient(func(ctx context.Context, c *cli.Client) error {
+			return runResume(ctx, c, args)
+		})
 	case "cancel", "rm":
-		runCancel(args)
+		runWithClient(func(ctx context.Context, c *cli.Client) error {
+			return runCancel(ctx, c, args)
+		})
 	case "refresh":
-		runRefresh(args)
+		runWithClient(func(ctx context.Context, c *cli.Client) error {
+			return runRefresh(ctx, c, args)
+		})
 	case "version", "--version", "-v":
 		fmt.Printf("bolt %s\n", version)
 	case "help", "--help", "-h":
@@ -52,11 +82,14 @@ func printUsage() {
 	fmt.Print(`bolt - fast segmented download manager
 
 Usage:
+  bolt                       Start the daemon (headless)
+  bolt start                 Start the daemon (headless)
+  bolt stop                  Stop the running daemon
   bolt add <url> [flags]     Add and start a download
   bolt list [flags]          List downloads
   bolt status <id>           Show download details
   bolt pause <id>            Pause a download
-  bolt resume <id|all>       Resume a paused download
+  bolt resume <id>           Resume a paused download
   bolt cancel <id> [flags]   Cancel and remove a download
   bolt refresh <id> <url>    Update URL for a failed download
   bolt version               Show version
@@ -78,7 +111,144 @@ Cancel flags:
 `)
 }
 
-func runAdd(args []string) {
+// launchHeadless starts the daemon with HTTP server (no GUI).
+func launchHeadless() {
+	// 1. Load config
+	cfg, err := config.Load(config.DefaultPath())
+	if err != nil {
+		fatal(fmt.Errorf("loading config: %w", err))
+	}
+
+	// 2. Check PID file
+	if pid.IsRunning() {
+		fatal(fmt.Errorf("daemon is already running (pid file: %s)", pid.Path()))
+	}
+
+	// 3. Write PID file
+	if err := pid.Write(); err != nil {
+		fatal(fmt.Errorf("writing PID file: %w", err))
+	}
+	defer pid.Remove()
+
+	// 4. Open database
+	dbPath := filepath.Join(config.Dir(), "bolt.db")
+	store, err := db.Open(dbPath)
+	if err != nil {
+		fatal(fmt.Errorf("opening database: %w", err))
+	}
+	defer store.Close()
+
+	// 5. Create event bus, engine, queue manager
+	bus := event.NewBus()
+	eng := engine.New(store, cfg, bus)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var queueMgr *queue.Manager
+	queueMgr = queue.New(store, bus, cfg.MaxConcurrent, func(ctx context.Context, id string) error {
+		return eng.StartDownload(ctx, id)
+	})
+
+	// 6. Wire queue completion: subscribe to bus events.
+	ch, subID := bus.Subscribe()
+	go func() {
+		for evt := range ch {
+			switch evt.(type) {
+			case event.DownloadCompleted, event.DownloadFailed, event.DownloadPaused:
+				var dlID string
+				switch e := evt.(type) {
+				case event.DownloadCompleted:
+					dlID = e.DownloadID
+				case event.DownloadFailed:
+					dlID = e.DownloadID
+				case event.DownloadPaused:
+					dlID = e.DownloadID
+				}
+				queueMgr.OnDownloadComplete(dlID)
+			}
+		}
+	}()
+	defer bus.Unsubscribe(subID)
+
+	// 7. Create HTTP server
+	srv := server.New(eng, store, cfg, bus, queueMgr)
+
+	// 8. Start queue manager goroutine
+	go queueMgr.Run(ctx)
+
+	// 9. Start HTTP server goroutine
+	go func() {
+		if err := srv.Start(ctx); err != nil && err != http.ErrServerClosed {
+			slog.Error("server error", "error", err)
+		}
+	}()
+
+	// 10. Resume interrupted downloads
+	if err := eng.Start(ctx); err != nil {
+		slog.Error("resume interrupted downloads", "error", err)
+	}
+
+	// 11. Block on SIGINT/SIGTERM
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-sigCh
+	fmt.Printf("\nReceived %s, shutting down...\n", sig)
+
+	// 12. Shutdown sequence
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer shutdownCancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("server shutdown", "error", err)
+	}
+	if err := eng.Shutdown(shutdownCtx); err != nil {
+		slog.Error("engine shutdown", "error", err)
+	}
+	cancel()
+}
+
+// runStop stops the running daemon.
+func runStop() {
+	c, err := cli.NewClient()
+	if err != nil {
+		fatal(err)
+	}
+	if err := c.Stop(); err != nil {
+		fatal(err)
+	}
+}
+
+// runWithClient creates a CLI client, checks the daemon, and runs the command.
+func runWithClient(fn func(ctx context.Context, c *cli.Client) error) {
+	c, err := cli.NewClient()
+	if err != nil {
+		fatal(err)
+	}
+
+	if err := c.CheckDaemon(); err != nil {
+		fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+
+	if err := fn(ctx, c); err != nil {
+		if ctx.Err() != nil {
+			os.Exit(0)
+		}
+		fatal(err)
+	}
+}
+
+func runAdd(ctx context.Context, c *cli.Client, args []string) error {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: bolt add <url> [flags]")
 		os.Exit(1)
@@ -126,35 +296,10 @@ func runAdd(args []string) {
 		}
 	}
 
-	c, err := cli.New()
-	if err != nil {
-		fatal(err)
-	}
-	defer c.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Handle SIGINT for graceful pause
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		fmt.Println("\nShutting down gracefully...")
-		_ = c.Shutdown(ctx)
-		cancel()
-	}()
-
-	if err := c.Add(ctx, opts); err != nil {
-		if ctx.Err() != nil {
-			// Graceful shutdown
-			os.Exit(0)
-		}
-		fatal(err)
-	}
+	return c.Add(ctx, opts)
 }
 
-func runList(args []string) {
+func runList(ctx context.Context, c *cli.Client, args []string) error {
 	opts := cli.ListOptions{}
 
 	for i := 0; i < len(args); i++ {
@@ -169,84 +314,34 @@ func runList(args []string) {
 		}
 	}
 
-	c, err := cli.New()
-	if err != nil {
-		fatal(err)
-	}
-	defer c.Close()
-
-	if err := c.List(context.Background(), opts); err != nil {
-		fatal(err)
-	}
+	return c.List(ctx, opts)
 }
 
-func runStatus(args []string) {
+func runStatus(ctx context.Context, c *cli.Client, args []string) error {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: bolt status <id>")
 		os.Exit(1)
 	}
-
-	c, err := cli.New()
-	if err != nil {
-		fatal(err)
-	}
-	defer c.Close()
-
-	if err := c.Status(context.Background(), args[0]); err != nil {
-		fatal(err)
-	}
+	return c.Status(ctx, args[0])
 }
 
-func runPause(args []string) {
+func runPause(ctx context.Context, c *cli.Client, args []string) error {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: bolt pause <id>")
 		os.Exit(1)
 	}
-
-	c, err := cli.New()
-	if err != nil {
-		fatal(err)
-	}
-	defer c.Close()
-
-	if err := c.Pause(context.Background(), args[0]); err != nil {
-		fatal(err)
-	}
+	return c.Pause(ctx, args[0])
 }
 
-func runResume(args []string) {
+func runResume(ctx context.Context, c *cli.Client, args []string) error {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "Usage: bolt resume <id|all>")
+		fmt.Fprintln(os.Stderr, "Usage: bolt resume <id>")
 		os.Exit(1)
 	}
-
-	c, err := cli.New()
-	if err != nil {
-		fatal(err)
-	}
-	defer c.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		fmt.Println("\nShutting down gracefully...")
-		_ = c.Shutdown(ctx)
-		cancel()
-	}()
-
-	if err := c.Resume(ctx, args[0], true); err != nil {
-		if ctx.Err() != nil {
-			os.Exit(0)
-		}
-		fatal(err)
-	}
+	return c.Resume(ctx, args[0], true)
 }
 
-func runCancel(args []string) {
+func runCancel(ctx context.Context, c *cli.Client, args []string) error {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Usage: bolt cancel <id> [--delete-file]")
 		os.Exit(1)
@@ -260,32 +355,15 @@ func runCancel(args []string) {
 		}
 	}
 
-	c, err := cli.New()
-	if err != nil {
-		fatal(err)
-	}
-	defer c.Close()
-
-	if err := c.Cancel(context.Background(), id, deleteFile); err != nil {
-		fatal(err)
-	}
+	return c.Cancel(ctx, id, deleteFile)
 }
 
-func runRefresh(args []string) {
+func runRefresh(ctx context.Context, c *cli.Client, args []string) error {
 	if len(args) < 2 {
 		fmt.Fprintln(os.Stderr, "Usage: bolt refresh <id> <new-url>")
 		os.Exit(1)
 	}
-
-	c, err := cli.New()
-	if err != nil {
-		fatal(err)
-	}
-	defer c.Close()
-
-	if err := c.Refresh(context.Background(), args[0], args[1]); err != nil {
-		fatal(err)
-	}
+	return c.Refresh(ctx, args[0], args[1])
 }
 
 func fatal(err error) {

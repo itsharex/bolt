@@ -51,6 +51,20 @@ type DownloadRemoved struct {
 
 func (DownloadRemoved) EventType() string { return "download_removed" }
 
+// DownloadPaused is emitted when a download is paused.
+type DownloadPaused struct {
+	DownloadID string
+}
+
+func (DownloadPaused) EventType() string { return "download_paused" }
+
+// DownloadResumed is emitted when a download is resumed.
+type DownloadResumed struct {
+	DownloadID string
+}
+
+func (DownloadResumed) EventType() string { return "download_resumed" }
+
 // RefreshNeeded is emitted when a download's metadata should be re-fetched.
 type RefreshNeeded struct {
 	DownloadID string

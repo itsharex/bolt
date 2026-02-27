@@ -9,6 +9,7 @@ Fast, segmented download manager built with Go. See `bolt-prd.md` and `bolt-trd.
 - **Author:** github.com/fhsinchy
 - **SQLite driver:** `modernc.org/sqlite` (pure Go, no CGO)
 - **ULID library:** `github.com/oklog/ulid/v2`
+- **WebSocket:** `nhooyr.io/websocket`
 - **Test framework:** stdlib `testing` + `net/http/httptest` (no external test deps)
 
 ## TRD Errata
@@ -34,8 +35,19 @@ Standalone binary with embedded engine. No HTTP server, no GUI, no browser exten
 - Step 9: CLI interface — `internal/cli/`, `cmd/bolt/`
 - Step 10: Integration tests + Makefile
 
-### Phase 2: HTTP Server + Daemon (NOT STARTED)
-Add HTTP server, refactor CLI to become HTTP client, WebSocket for real-time progress.
+### Phase 2: HTTP Server + Daemon (COMPLETE)
+HTTP server with REST API and WebSocket. CLI refactored to HTTP client. PID file daemon management.
+
+**Exit criteria (met):** Can add downloads via `curl` to the API, see progress via WebSocket, and queue respects concurrency limits.
+
+**What was built:**
+- Step 1: PID file management — `internal/pid/`
+- Step 2: New event types (DownloadPaused, DownloadResumed) — `internal/event/`
+- Step 3: Engine.ProbeURL method — `internal/engine/engine.go`
+- Step 4: WebSocket dependency — `nhooyr.io/websocket`
+- Step 5: HTTP server (REST + WebSocket + middleware) — `internal/server/`
+- Step 6: CLI refactored to HTTP client — `internal/cli/`
+- Step 7: Entry point with daemon/client modes — `cmd/bolt/main.go`
 
 ### Phase 3: Wails GUI + Svelte Frontend (NOT STARTED)
 Desktop app with system tray, Wails v2 bindings.
@@ -43,9 +55,11 @@ Desktop app with system tray, Wails v2 bindings.
 ### Phase 4: Browser Extension (NOT STARTED)
 Manifest V3 extension for download capture.
 
-## Key Phase 1 Design Decision
+## Key Design Decisions
 
-The CLI embeds the engine directly (no HTTP server/daemon). Commands like `bolt add <url>` open the DB, create the engine, run the download, and show terminal progress. In Phase 2, we add the HTTP server and refactor the CLI to become an HTTP client. The engine interface stays identical — only the calling layer changes.
+**Phase 1:** CLI embedded the engine directly.
+
+**Phase 2:** CLI is now an HTTP client. The daemon (`bolt start`) runs the engine + HTTP server. CLI commands (`bolt add`, `bolt list`, etc.) talk to the daemon via REST API. Real-time progress uses WebSocket. The engine interface stayed identical — only the calling layer changed.
 
 ## Commands
 
@@ -60,7 +74,7 @@ make clean       # remove binary, clear test cache
 ## Architecture
 
 ```
-cmd/bolt/main.go          CLI entry point
+cmd/bolt/main.go          Entry point (daemon mode + CLI client dispatch)
 internal/
   model/                   Shared types, ID generation, formatting
   config/                  config.json management
@@ -68,6 +82,8 @@ internal/
   event/                   Event bus (pub/sub)
   engine/                  Download engine (core business logic)
   queue/                   Queue manager
-  cli/                     CLI command implementations
+  server/                  HTTP server (REST API + WebSocket)
+  cli/                     CLI HTTP client
+  pid/                     PID file management
   testutil/                Test helpers (httptest server)
 ```

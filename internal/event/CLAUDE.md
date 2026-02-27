@@ -10,6 +10,8 @@ Pub/sub event bus for progress reporting and status changes.
 | `DownloadAdded` | New download created |
 | `DownloadCompleted` | All segments finished |
 | `DownloadFailed` | Permanent error encountered |
+| `DownloadPaused` | Download paused |
+| `DownloadResumed` | Download resumed |
 | `DownloadRemoved` | Download deleted |
 | `RefreshNeeded` | Dead link detected |
 
