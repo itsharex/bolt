@@ -1,0 +1,206 @@
+package engine
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/fhsinchy/bolt/internal/model"
+)
+
+type segmentReport struct {
+	Index     int
+	BytesRead int64
+	Done      bool
+	Err       error
+}
+
+type segmentWorker struct {
+	download *model.Download
+	segment  *model.Segment
+	client   *http.Client
+	reportCh chan<- segmentReport
+	file     *os.File
+}
+
+const readBufSize = 32 * 1024
+
+// Run downloads the byte range for this segment. It returns nil on success,
+// a non-nil error on failure. Partial progress is reported through reportCh.
+func (w *segmentWorker) Run(ctx context.Context) error {
+	startByte := w.segment.StartByte + w.segment.Downloaded
+	endByte := w.segment.EndByte
+
+	if startByte > endByte {
+		w.reportCh <- segmentReport{Index: w.segment.Index, Done: true}
+		return nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, w.download.URL, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	applyHeaders(req, w.download.Headers)
+
+	// For single-connection mode (no range support), don't set Range header
+	if w.download.TotalSize > 0 && w.download.SegmentCount > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", startByte, endByte))
+	}
+
+	resp, err := w.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("executing request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return &httpError{StatusCode: resp.StatusCode}
+	}
+
+	buf := make([]byte, readBufSize)
+	var reader io.Reader = resp.Body
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		n, readErr := reader.Read(buf)
+		if n > 0 {
+			writeOffset := w.segment.StartByte + w.segment.Downloaded
+			if _, writeErr := w.file.WriteAt(buf[:n], writeOffset); writeErr != nil {
+				return fmt.Errorf("writing to file: %w", writeErr)
+			}
+			w.segment.Downloaded += int64(n)
+			w.reportCh <- segmentReport{
+				Index:     w.segment.Index,
+				BytesRead: int64(n),
+			}
+		}
+
+		if readErr != nil {
+			if readErr == io.EOF {
+				expectedSize := w.segment.EndByte - w.segment.StartByte + 1
+				if w.segment.Downloaded >= expectedSize {
+					w.segment.Done = true
+					w.reportCh <- segmentReport{Index: w.segment.Index, Done: true}
+					return nil
+				}
+				// EOF before expected — could be server cut short
+				return io.ErrUnexpectedEOF
+			}
+			return readErr
+		}
+
+		expectedSize := w.segment.EndByte - w.segment.StartByte + 1
+		if w.segment.Downloaded >= expectedSize {
+			w.segment.Done = true
+			w.reportCh <- segmentReport{Index: w.segment.Index, Done: true}
+			return nil
+		}
+	}
+}
+
+// RunWithRetry wraps Run with exponential backoff retry for transient errors.
+func (w *segmentWorker) RunWithRetry(ctx context.Context, maxRetries int) {
+	if w.segment.Done {
+		w.reportCh <- segmentReport{Index: w.segment.Index, Done: true}
+		return
+	}
+
+	backoff := 1 * time.Second
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		err := w.Run(ctx)
+		if err == nil {
+			return
+		}
+
+		if ctx.Err() != nil {
+			return
+		}
+
+		if isPermanentError(err) {
+			w.reportCh <- segmentReport{Index: w.segment.Index, Err: err}
+			return
+		}
+
+		if attempt < maxRetries {
+			select {
+			case <-time.After(backoff):
+				backoff = min(backoff*2, 60*time.Second)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
+	w.reportCh <- segmentReport{Index: w.segment.Index, Err: model.ErrMaxRetriesExceeded}
+}
+
+type httpError struct {
+	StatusCode int
+}
+
+func (e *httpError) Error() string {
+	return fmt.Sprintf("HTTP %d", e.StatusCode)
+}
+
+func isPermanentError(err error) bool {
+	var httpErr *httpError
+	if errors.As(err, &httpErr) {
+		switch httpErr.StatusCode {
+		case 404, 403, 410, 416:
+			return true
+		}
+		return false
+	}
+
+	// Context cancelled / deadline exceeded are not permanent — they're
+	// signals from the user (pause/cancel).
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	// Network errors are transient
+	var netErr *net.OpError
+	if errors.As(err, &netErr) {
+		return false
+	}
+
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return false
+	}
+
+	// io.UnexpectedEOF is transient
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return false
+	}
+
+	// Connection reset / broken pipe
+	if isConnectionReset(err) {
+		return false
+	}
+
+	// Default: treat unknown errors as transient to allow retry
+	return false
+}
+
+func isConnectionReset(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "connection reset") ||
+		strings.Contains(s, "broken pipe") ||
+		strings.Contains(s, "connection refused")
+}

@@ -1,0 +1,41 @@
+# Build output
+/bolt
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Config (generated at runtime)
+config.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (for future frontend)
+node_modules/
