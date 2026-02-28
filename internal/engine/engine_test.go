@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -455,6 +457,62 @@ func TestComputeSegments(t *testing.T) {
 	}
 	if total != 100 {
 		t.Errorf("total coverage = %d, want 100", total)
+	}
+}
+
+func TestAddDownload_ZeroContentLength(t *testing.T) {
+	// Server returns Content-Length: 0 with Accept-Ranges: bytes on HEAD.
+	// The engine should fall back to a single segment because TotalSize <= 0.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "0")
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	eng, _, _, _ := setupEngine(t)
+	eng.client = ts.Client()
+
+	ctx := context.Background()
+	dl, err := eng.AddDownload(ctx, model.AddRequest{
+		URL:      ts.URL + "/empty.bin",
+		Segments: 4,
+	})
+	if err != nil {
+		t.Fatalf("AddDownload: %v", err)
+	}
+
+	if dl.SegmentCount != 1 {
+		t.Errorf("SegmentCount = %d, want 1 (zero content-length should force single segment)", dl.SegmentCount)
+	}
+}
+
+func TestAddDownload_RedirectChain(t *testing.T) {
+	const fileSize = 1024 * 10 // 10 KB
+
+	// File server that serves the actual content.
+	fileServer := testutil.NewTestServer(fileSize)
+	defer fileServer.Close()
+
+	// Redirect server that 302-redirects to the file server.
+	redirectServer := testutil.NewRedirectServer(fileServer.URL + "/final.bin")
+	defer redirectServer.Close()
+
+	eng, _, _, _ := setupEngine(t)
+	// Use a plain http.Client so it can reach both httptest servers.
+	eng.client = &http.Client{}
+
+	ctx := context.Background()
+	dl, err := eng.AddDownload(ctx, model.AddRequest{
+		URL:      redirectServer.URL + "/start.bin",
+		Segments: 4,
+	})
+	if err != nil {
+		t.Fatalf("AddDownload: %v", err)
+	}
+
+	if dl.TotalSize != fileSize {
+		t.Errorf("TotalSize = %d, want %d", dl.TotalSize, fileSize)
 	}
 }
 

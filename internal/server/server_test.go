@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -306,5 +307,32 @@ func TestWebSocket(t *testing.T) {
 	}
 	if msg["download_id"] != "test-id" {
 		t.Fatalf("expected download_id test-id, got %v", msg["download_id"])
+	}
+}
+
+func TestHandleConcurrentRequests(t *testing.T) {
+	te := newTestEnv(t)
+
+	const goroutines = 10
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	errs := make(chan error, goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func(n int) {
+			defer wg.Done()
+			rr := te.doRequest("GET", "/api/stats", nil, te.cfg.AuthToken)
+			if rr.Code != http.StatusOK {
+				errs <- fmt.Errorf("goroutine %d: expected 200, got %d", n, rr.Code)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Error(err)
 	}
 }

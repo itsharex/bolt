@@ -160,3 +160,55 @@ func TestQueue_EmptyQueue(t *testing.T) {
 		t.Error("startFn should not have been called with empty queue")
 	}
 }
+
+func TestMaxConcurrentChanged_MidFlight(t *testing.T) {
+	store := openTestStore(t)
+	bus := event.NewBus()
+
+	var mu sync.Mutex
+	started := make([]string, 0)
+
+	startFn := func(ctx context.Context, id string) error {
+		mu.Lock()
+		started = append(started, id)
+		mu.Unlock()
+		return nil
+	}
+
+	mgr := New(store, bus, 2, startFn)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go mgr.Run(ctx)
+
+	// Insert 5 queued downloads and enqueue them.
+	for i := 0; i < 5; i++ {
+		id := model.NewDownloadID()
+		insertQueuedDownload(t, store, id, i)
+		mgr.Enqueue(id)
+	}
+
+	// Wait for initial evaluation with MaxConcurrent=2.
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	count1 := len(started)
+	mu.Unlock()
+	if count1 != 2 {
+		t.Fatalf("expected 2 started initially, got %d", count1)
+	}
+
+	// Raise concurrency limit mid-flight.
+	mgr.SetMaxConcurrent(5)
+
+	// Wait for re-evaluation.
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	count2 := len(started)
+	mu.Unlock()
+	if count2 < 4 {
+		t.Errorf("expected at least 4 started after SetMaxConcurrent(5), got %d", count2)
+	}
+}

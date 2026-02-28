@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/fhsinchy/bolt/internal/model"
@@ -548,5 +550,86 @@ func TestGetDownload_CreatedAtParsed(t *testing.T) {
 
 	if got.CreatedAt.IsZero() {
 		t.Error("CreatedAt is zero, want non-zero (set by DEFAULT)")
+	}
+}
+
+func TestConcurrentWrites(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	const numGoroutines = 20
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	// Generate IDs on the main goroutine because model.NewDownloadID()
+	// uses a shared MonotonicEntropy that is not goroutine-safe.
+	ids := make([]string, numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
+		ids[i] = model.NewDownloadID()
+	}
+
+	errs := make(chan error, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(n int) {
+			defer wg.Done()
+			d := newTestDownload(ids[n])
+			d.Filename = fmt.Sprintf("concurrent_%d.zip", n)
+			if err := store.InsertDownload(ctx, d); err != nil {
+				errs <- fmt.Errorf("goroutine %d: insert %s: %w", n, ids[n], err)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("concurrent insert failed: %v", err)
+	}
+
+	downloads, err := store.ListDownloads(ctx, "", 0, 0)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(downloads) != numGoroutines {
+		t.Errorf("got %d downloads, want %d", len(downloads), numGoroutines)
+	}
+}
+
+func TestUnicodeFilenames(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name     string
+		filename string
+	}{
+		{"Japanese", "ファイル.zip"},
+		{"Chinese", "档案.tar.gz"},
+		{"Russian", "файл_данных.bin"},
+		{"Greek", "αρχείο.pdf"},
+		{"Emoji", "emoji_🎉_test.bin"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id := model.NewDownloadID()
+			d := newTestDownload(id)
+			d.Filename = tt.filename
+
+			if err := store.InsertDownload(ctx, d); err != nil {
+				t.Fatalf("insert: %v", err)
+			}
+
+			got, err := store.GetDownload(ctx, id)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+
+			if got.Filename != tt.filename {
+				t.Errorf("Filename = %q, want %q", got.Filename, tt.filename)
+			}
+		})
 	}
 }
