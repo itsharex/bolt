@@ -1,4 +1,4 @@
-.PHONY: build build-gui dev test test-race test-v clean
+.PHONY: build build-gui dev test test-race test-v test-stress test-cover clean
 
 BINARY = bolt
 
@@ -24,6 +24,13 @@ test-race:
 
 test-v:
 	go test ./... -v -count=1 -timeout 120s
+
+test-stress:
+	go test -tags=stress ./... -count=1 -timeout 300s
+
+test-cover:
+	go test ./... -count=1 -coverprofile=coverage.out -timeout 120s
+	go tool cover -func=coverage.out
 
 clean:
 	rm -f $(BINARY)
