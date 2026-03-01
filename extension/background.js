@@ -36,6 +36,29 @@ async function getConfig() {
   return { ...DEFAULT_CONFIG, ...result.config };
 }
 
+// --- Download UI suppression ---
+
+async function syncDownloadUi() {
+  const config = await getConfig();
+  const enabled = !config.captureEnabled; // UI disabled when capture is ON
+  try {
+    await chrome.downloads.setUiOptions({ enabled });
+    log('Download UI', enabled ? 'enabled' : 'disabled');
+  } catch (err) {
+    warn('setUiOptions failed:', err.message);
+  }
+}
+
+// Sync on service worker startup
+syncDownloadUi();
+
+// Re-sync when config changes (e.g. capture toggle in popup)
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.config) {
+    syncDownloadUi();
+  }
+});
+
 // --- Cookie helpers ---
 
 async function getCookiesForUrl(url) {
@@ -216,6 +239,11 @@ function buildDownloadHeaders(cookieString, referrerUrl, userAgent) {
 // --- Message handler (content script link interception) ---
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (msg.type === 'open-settings') {
+    chrome.tabs.create({ url: 'chrome://settings/downloads' });
+    return;
+  }
+
   if (msg.type !== 'link-download') return;
 
   // Handle async in a self-invoking async function (listeners must return synchronously).
@@ -228,7 +256,6 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     const config = await getConfig();
     if (!config.captureEnabled) {
       log('Capture disabled, falling back to browser download');
-      // Re-initiate as a normal browser download.
       redownloadUrls.add(url);
       chrome.downloads.download({ url });
       return;
@@ -237,6 +264,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     const reachable = await checkBoltReachable(config.serverUrl, config.authToken);
     if (!reachable) {
       log('Bolt not reachable, falling back to browser download');
+      await chrome.downloads.setUiOptions({ enabled: true });
       redownloadUrls.add(url);
       chrome.downloads.download({ url });
       return;
@@ -269,6 +297,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     } catch (err) {
       warn('Send to Bolt failed, falling back to browser download:', err.message);
       showError('Bolt Capture', `Failed: ${err.message}`);
+      await chrome.downloads.setUiOptions({ enabled: true });
       redownloadUrls.add(url);
       chrome.downloads.download({ url });
     }
@@ -277,13 +306,17 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
 // --- Context menu ---
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(({ reason }) => {
   log('Extension installed, registering context menu');
   chrome.contextMenus.create({
     id: 'download-with-bolt',
     title: 'Download with Bolt',
     contexts: ['link'],
   });
+
+  if (reason === 'install') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') });
+  }
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -348,6 +381,8 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
   if (redownloadUrls.has(url)) {
     redownloadUrls.delete(url);
     log('Skipping re-initiated download:', url);
+    // Restore UI suppression after the fallback download starts
+    syncDownloadUi();
     return;
   }
 
@@ -378,6 +413,7 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
   const reachable = await checkBoltReachable(config.serverUrl, config.authToken);
   if (!reachable) {
     log('Bolt not reachable, re-initiating browser download');
+    await chrome.downloads.setUiOptions({ enabled: true });
     redownloadUrls.add(url);
     chrome.downloads.download({ url });
     return;
@@ -409,6 +445,7 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     warn('Send to Bolt failed, re-initiating browser download:', err.message);
     showError('Bolt Capture', `Failed to send to Bolt: ${err.message}`);
     // Fall back to browser download so the user doesn't lose the file.
+    await chrome.downloads.setUiOptions({ enabled: true });
     redownloadUrls.add(url);
     chrome.downloads.download({ url });
   }

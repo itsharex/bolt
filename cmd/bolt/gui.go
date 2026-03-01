@@ -71,6 +71,11 @@ func launchGUI() {
 			OnResumeAll: func() {
 				_ = application.ResumeAll()
 			},
+			OnSettings: func() {
+				wailsRuntime.WindowShow(ctx)
+				tray.SetVisible(true)
+				wailsRuntime.EventsEmit(ctx, "open_settings")
+			},
 			OnQuit: func() {
 				quitting = true
 				tray.Quit()

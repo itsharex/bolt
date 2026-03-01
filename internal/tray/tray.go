@@ -10,6 +10,7 @@ type Callbacks struct {
 	OnHide      func()
 	OnPauseAll  func()
 	OnResumeAll func()
+	OnSettings  func()
 	OnQuit      func()
 }
 
@@ -34,6 +35,8 @@ func Start(cb Callbacks) {
 		systray.AddSeparator()
 		mPause := systray.AddMenuItem("Pause All", "Pause all downloads")
 		mResume := systray.AddMenuItem("Resume All", "Resume all downloads")
+		systray.AddSeparator()
+		mSettings := systray.AddMenuItem("Settings", "Open settings")
 		systray.AddSeparator()
 		mQuit := systray.AddMenuItem("Quit", "Quit Bolt")
 
@@ -73,6 +76,12 @@ func Start(cb Callbacks) {
 		mResume.Click(func() {
 			if cb.OnResumeAll != nil {
 				cb.OnResumeAll()
+			}
+		})
+
+		mSettings.Click(func() {
+			if cb.OnSettings != nil {
+				cb.OnSettings()
 			}
 		})
 

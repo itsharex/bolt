@@ -34,8 +34,9 @@
   }
 
   async function cancel() {
+    if (!confirm("Cancel this download and delete the partial file?")) return;
     try {
-      await app.CancelDownload(download.id, false);
+      await app.CancelDownload(download.id, true);
     } catch (e) {
       console.error("Cancel failed:", e);
     }

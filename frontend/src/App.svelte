@@ -16,6 +16,13 @@
     initEventListeners();
     loadDownloads();
     loadConfig();
+
+    const runtime = (window as any).runtime;
+    if (runtime) {
+      runtime.EventsOn("open_settings", () => {
+        showSettings = true;
+      });
+    }
   });
 </script>
 
