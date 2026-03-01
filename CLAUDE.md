@@ -20,6 +20,29 @@ Fast, segmented download manager built with Go. See `bolt-prd.md` and `bolt-trd.
 - TRD §13.4 says Wails v2 has native `options.SystemTray` — this is incorrect. Wails v2 has no system tray API. We use `energye/systray` instead.
 - TRD/PRD specify port 6800, but this conflicts with aria2c's default JSON-RPC port. Changed to 9683.
 
+## Icons & Wayland
+
+Wails' `linux.Options{Icon: []byte}` calls `gtk_window_set_icon()`, which only works on X11. On Wayland (both GNOME and KDE), compositors ignore GTK window icons and instead match the app ID to a `.desktop` file to look up icons from the icon theme.
+
+**How it works:**
+- `linux.Options{ProgramName: "bolt"}` calls `g_set_prgname("bolt")`, which sets the Wayland `app_id` to `"bolt"`
+- The compositor looks for `bolt.desktop` in `~/.local/share/applications/` or `/usr/share/applications/`
+- The `.desktop` file specifies `Icon=bolt`, which resolves to `bolt.png` in the icon theme (e.g. `~/.local/share/icons/hicolor/256x256/apps/bolt.png` or `/usr/share/icons/hicolor/256x256/apps/bolt.png`)
+
+**What packages must install:**
+1. `bolt.desktop` → `/usr/share/applications/` (or `~/.local/share/applications/` for user installs)
+2. `bolt.png` → `/usr/share/icons/hicolor/256x256/apps/` (source: `build/appicon.png`)
+3. The `.desktop` file's `StartupWMClass=bolt` must match `ProgramName` in `gui.go`
+
+**Icon files:**
+- `build/appicon.png` — 256x256 RGBA, app icon (Wails build + icon theme install)
+- `cmd/bolt/appicon.png` — same file, embedded via `//go:embed` for `linux.Options{Icon}` (X11 fallback)
+- `internal/tray/icon.png` — 64x64 white-on-transparent, embedded for systray via `energye/systray`
+- `extensions/{chrome,firefox}/icons/` — 16, 48, 128px variants for browser extensions
+- `images/icon.png` — full-resolution source icon (1536x1024), used to generate all of the above
+- `images/banner.png` — repo banner for README
+- `dist/bolt.desktop` — desktop entry file for Wayland icon resolution
+
 ## Development Phases
 
 ### Phase 1: Download Engine + CLI (COMPLETE)
@@ -117,8 +140,8 @@ make test-cover  # run tests with coverage report
 make build-extension         # build both Chrome and Firefox zips
 make build-extension-chrome  # zip extensions/chrome/ → dist/bolt-capture-chrome.zip
 make build-extension-firefox # zip extensions/firefox/ → dist/bolt-capture-firefox.zip
-make install     # build + install binary + systemd unit
-make uninstall   # stop + disable + remove binary + unit
+make install     # build + install binary + systemd unit + .desktop + icon
+make uninstall   # stop + disable + remove binary + unit + .desktop + icon
 make clean       # remove binary, clear test cache
 ```
 
@@ -133,7 +156,10 @@ Tests do not require Wails build tags — `go test ./...` works without them.
 ```
 cmd/bolt/
   main.go                  Entry point (GUI/headless/CLI dispatch)
-  gui.go                   launchGUI() + Wails window + tray setup
+  gui.go                   launchGUI() + Wails window + tray + Linux icon setup
+  appicon.png              Embedded app icon for linux.Options{Icon} (X11 fallback)
+build/
+  appicon.png              256x256 app icon (Wails build + icon theme install)
 embed.go                   //go:embed frontend/dist
 wails.json                 Wails project config
 frontend/                  Svelte 5 + TypeScript + Vite + Tailwind
@@ -166,7 +192,7 @@ internal/
   server/                  HTTP server (REST API + WebSocket)
   cli/                     CLI HTTP client
   pid/                     PID file management
-  tray/                    System tray (energye/systray)
+  tray/                    System tray (energye/systray, white icon embedded)
   notify/                  Desktop notifications (notify-send, osascript, PowerShell)
   testutil/                Test helpers (httptest server)
 extensions/
@@ -184,6 +210,10 @@ extensions/
     popup/                 Config popup (no Save As warning)
     welcome/               First-install welcome page (1 step, no JS)
     icons/                 Extension icons (16, 48, 128)
+images/
+  icon.png                 Full-resolution source icon (generate all sizes from this)
+  banner.png               Repo banner for README
 dist/
   bolt.service             Systemd user unit file
+  bolt.desktop             Desktop entry (Wayland icon resolution)
 ```

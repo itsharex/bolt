@@ -1,8 +1,10 @@
-# Bolt
+<p align="center">
+  <img src="images/banner.png" alt="Bolt — Fast, segmented download manager for Linux" width="600" />
+</p>
 
-Fast, segmented download manager for Linux. Splits files into multiple connections for faster downloads, with pause/resume, queuing, and a native desktop GUI.
-
-**Status:** Work in progress. Core engine, HTTP API, CLI, and GUI are functional. Browser extension is not yet built.
+<p align="center">
+  <strong>Work in progress.</strong> Core engine, HTTP API, CLI, GUI, and browser extensions are functional. Working toward a stable v1.0 release.
+</p>
 
 ## Features
 
@@ -10,7 +12,11 @@ Fast, segmented download manager for Linux. Splits files into multiple connectio
 - **Pause and resume** — segment progress persists to SQLite, survives process restarts
 - **Auto-retry** — per-segment exponential backoff for transient failures
 - **Download queue** — configurable max concurrent downloads with FIFO scheduling
+- **Speed limiter** — global rate limiting across all active segments
 - **Dead link refresh** — automatic URL renewal for expired CDN links
+- **Dark theme** — system, light, and dark modes with live switching
+- **Desktop notifications** — completion and failure alerts via native OS notifications
+- **Browser extensions** — Chrome and Firefox extensions intercept downloads and send them to Bolt
 - **REST API** — full CRUD over HTTP for scripting and extension integration
 - **WebSocket** — real-time progress push
 - **System tray** — minimize to tray, background operation
@@ -18,7 +24,7 @@ Fast, segmented download manager for Linux. Splits files into multiple connectio
 
 ## Screenshots
 
-*Coming soon.*
+![Bolt in dark and light mode](bolt-light-dark.png)
 
 ## Quick Start
 
@@ -93,6 +99,16 @@ bolt refresh <id> "https://example.com/new-url"
 bolt stop
 ```
 
+## Browser Extension
+
+Bolt ships browser extensions for Chrome and Firefox that intercept downloads and forward them to the running daemon.
+
+**Chrome:** Open `chrome://extensions`, enable Developer mode, click "Load unpacked", and select `extensions/chrome/`.
+
+**Firefox:** Open `about:debugging#/runtime/this-firefox`, click "Load Temporary Add-on", and select any file inside `extensions/firefox/`.
+
+The extension popup lets you configure the server URL and auth token. On first install, a welcome page walks you through setup.
+
 ## Development
 
 ```bash
@@ -131,6 +147,20 @@ internal/
   model/            Shared types
 frontend/           Svelte 5 + TypeScript + Tailwind CSS
 ```
+
+## Roadmap
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1. Engine + CLI | Segmented downloads, pause/resume, retry, queue, CLI | Complete |
+| 2. HTTP Server | REST API, WebSocket progress, daemon mode | Complete |
+| 3. Desktop GUI | Wails app, system tray, Svelte frontend | Complete |
+| 4. Browser Extension | Chrome + Firefox download interception | Complete |
+| 5. P1 Features | Speed limiter, dark theme, notifications, keyboard shortcuts, batch import | In progress |
+| 6. P2 Features | Checksum verification, download scheduling, clipboard monitoring | Planned |
+| 7. P3 Features | Proxy support, file categorization, auto-shutdown | Planned |
+
+See `STATUS.md` for detailed per-feature status.
 
 ## Building on Other Platforms
 

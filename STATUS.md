@@ -12,7 +12,7 @@
 | Phase 2 — HTTP Server + Daemon | **COMPLETE** | 100% |
 | Phase 3 — Wails GUI + Frontend | **COMPLETE** | 100% |
 | Phase 4 — Browser Extension | **COMPLETE** | 100% |
-| Phase 5 — P1 Features | **IN PROGRESS** | ~25% |
+| Phase 5 — P1 Features | **IN PROGRESS** | ~60% |
 | Phase 6 — P2 Features | **NOT STARTED** | ~5% (config fields only) |
 | Phase 7 — P3 Features | **NOT STARTED** | ~5% (config fields only) |
 
@@ -105,15 +105,15 @@ All deliverables built:
 
 | Feature | Status |
 |---------|--------|
-| Speed limiter (global + per-download) | **Not enforced** — model fields exist (`SpeedLimit`, `GlobalSpeedLimit`), no rate limiter in engine |
+| Speed limiter (global) | Done — `golang.org/x/time/rate`, shared limiter across all segments, configurable in Settings |
 | Duplicate URL detection | Done (`ErrDuplicateURL`, 409 Conflict) |
-| Dark/light theme | **Config only** — `theme` field exists (default "system"), frontend always renders light |
+| Dark/light theme | Done — class-based toggle (system/light/dark), all components styled |
 | Keyboard shortcuts | Partial — Enter to probe, Escape to close dialogs; no global shortcuts |
 | Queue reordering (drag & drop) | Not implemented (`queue_order` model field exists, unused) |
-| Desktop notifications | Not implemented in desktop app (extension has chrome notifications) |
+| Desktop notifications | Done — `internal/notify/` (`notify-send`, `osascript`, PowerShell) |
 | Batch URL import | Not implemented |
 | Search/filter in download list | Done — `SearchBar` with client-side text filtering |
-| Extension popup | Done (`extension/popup/`) |
+| Extension popup | Done (`extensions/chrome/popup/`, `extensions/firefox/popup/`) |
 | Extension file/size filters | Partial — file extension filtering (30+ types); no user-configurable size filter |
 | Extension domain blocklist | Partial — hardcoded blocklist (localhost); not user-configurable |
 
@@ -124,7 +124,7 @@ All deliverables built:
 | Checksum verification | **Config only** — `Checksum` struct in model; not enforced in engine |
 | Download scheduling | Not implemented |
 | Clipboard monitoring | **Config only** — `clipboard_monitor` field exists; not wired |
-| Full settings panel | Partial — exposes 5 settings; missing: theme, speed limit, proxy, categorize, etc. |
+| Full settings panel | Mostly done — exposes 9 settings (dir, concurrency, segments, retries, tray, speed limit, theme, port, token); missing: proxy, categorize |
 | Sound on completion | **Config only** — `sound_on_complete` field exists; not wired |
 | Extension options page | Not implemented (popup only) |
 | CLI `--json` output | Not implemented |
@@ -136,11 +136,11 @@ All deliverables built:
 | File categorization by type | **Config only** — `categorize` bool + `categories` map exist; not used by engine |
 | Proxy support (HTTP/SOCKS5) | **Config only** — `proxy` field exists; not connected to HTTP client |
 | Auto-shutdown/sleep | Not implemented |
-| Start on system boot | Not implemented |
+| Start on system boot | Done — `dist/bolt.service` systemd user unit, `make install` / `make uninstall` |
 | Firefox extension | Done (`extensions/firefox/`) |
 
 ---
 
 ## Other Missing Artifacts
 
-- No `bolt.service` systemd user unit file (mentioned in TRD §21)
+None — all planned artifacts are implemented.
