@@ -84,13 +84,20 @@ async function checkBoltReachable(serverUrl, token) {
       signal: AbortSignal.timeout(3000),
     });
 
+    if (resp.status === 401) {
+      warn('Bolt auth failed:', resp.status, resp.statusText);
+      return { ok: false, reason: 'auth_failed' };
+    }
+
     if (!resp.ok) {
       warn('Bolt reachability check failed:', resp.status, resp.statusText);
+      return { ok: false, reason: 'unreachable' };
     }
-    return resp.ok;
+
+    return { ok: true, reason: 'reachable' };
   } catch (err) {
     warn('Bolt not reachable:', err.message);
-    return false;
+    return { ok: false, reason: 'unreachable' };
   }
 }
 
@@ -226,6 +233,14 @@ function showSuccess(title, message) {
   });
 }
 
+function notifyUnreachable(reason) {
+  if (reason === 'auth_failed') {
+    showError('Bolt Capture', 'Bolt rejected the access key — check extension settings');
+  } else {
+    showError('Bolt Capture', 'Bolt is not running — download sent to browser instead');
+  }
+}
+
 // --- Build headers for Bolt ---
 
 function buildDownloadHeaders(cookieString, referrerUrl, userAgent) {
@@ -261,9 +276,10 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       return;
     }
 
-    const reachable = await checkBoltReachable(config.serverUrl, config.authToken);
-    if (!reachable) {
-      log('Bolt not reachable, falling back to browser download');
+    const { ok, reason } = await checkBoltReachable(config.serverUrl, config.authToken);
+    if (!ok) {
+      log('Bolt not reachable (' + reason + '), falling back to browser download');
+      notifyUnreachable(reason);
       await chrome.downloads.setUiOptions({ enabled: true });
       redownloadUrls.add(url);
       chrome.downloads.download({ url });
@@ -333,9 +349,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
 
-  const reachable = await checkBoltReachable(config.serverUrl, config.authToken);
-  if (!reachable) {
-    showError('Bolt Capture', 'Bolt is not running. Cannot send download.');
+  const { ok, reason } = await checkBoltReachable(config.serverUrl, config.authToken);
+  if (!ok) {
+    if (reason === 'auth_failed') {
+      showError('Bolt Capture', 'Bolt rejected the access key — check extension settings');
+    } else {
+      showError('Bolt Capture', 'Bolt is not running. Cannot send download.');
+    }
     return;
   }
 
@@ -410,9 +430,10 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
   log('Browser download cancelled, checking Bolt');
 
   // Now verify Bolt is reachable. If not, give the download back to the browser.
-  const reachable = await checkBoltReachable(config.serverUrl, config.authToken);
-  if (!reachable) {
-    log('Bolt not reachable, re-initiating browser download');
+  const { ok, reason } = await checkBoltReachable(config.serverUrl, config.authToken);
+  if (!ok) {
+    log('Bolt not reachable (' + reason + '), re-initiating browser download');
+    notifyUnreachable(reason);
     await chrome.downloads.setUiOptions({ enabled: true });
     redownloadUrls.add(url);
     chrome.downloads.download({ url });

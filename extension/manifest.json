@@ -3,7 +3,7 @@
   "name": "Bolt Capture",
   "version": "1.0.0",
   "description": "Capture browser downloads and send them to Bolt",
-  "permissions": ["downloads", "cookies", "contextMenus", "storage", "notifications"],
+  "permissions": ["downloads", "downloads.ui", "cookies", "contextMenus", "storage", "notifications"],
   "host_permissions": ["http://127.0.0.1:*/*", "http://localhost:*/*", "<all_urls>"],
   "background": { "service_worker": "background.js" },
   "action": {

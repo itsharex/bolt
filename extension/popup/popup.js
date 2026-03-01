@@ -115,6 +115,24 @@ document.getElementById('chrome-downloads-link').addEventListener('click', (e) =
   chrome.tabs.create({ url: 'chrome://settings/downloads' });
 });
 
+// --- Warning banner dismiss ---
+
+const warningBanner = document.getElementById('save-dialog-warning');
+const dismissBtn = document.getElementById('dismiss-warning');
+
+async function loadWarningState() {
+  const result = await chrome.storage.local.get('saveDialogWarningDismissed');
+  if (result.saveDialogWarningDismissed) {
+    warningBanner.classList.add('hidden');
+  }
+}
+
+dismissBtn.addEventListener('click', async () => {
+  warningBanner.classList.add('hidden');
+  await chrome.storage.local.set({ saveDialogWarningDismissed: true });
+});
+
 // --- Init ---
 
 loadConfig();
+loadWarningState();

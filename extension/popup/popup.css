@@ -230,25 +230,52 @@ input[type="password"]:focus {
   background: #3a3a5a;
 }
 
-.tip {
+.warning-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin-top: 14px;
-  padding: 8px 10px;
-  background: #16213e;
-  border-radius: 6px;
+  padding: 10px 12px;
+  background: #2a2210;
+  border-left: 3px solid #f59e0b;
+  border-radius: 0 6px 6px 0;
   font-size: 11px;
-  color: #6b7280;
+  color: #d4d0c8;
   line-height: 1.5;
 }
 
-.tip strong {
-  color: #a0a0b0;
+.warning-banner.hidden {
+  display: none;
 }
 
-.tip a {
+.warning-content {
+  flex: 1;
+}
+
+.warning-content strong {
+  color: #fbbf24;
+}
+
+.warning-content a {
   color: #818cf8;
   text-decoration: none;
 }
 
-.tip a:hover {
+.warning-content a:hover {
   text-decoration: underline;
+}
+
+.warning-dismiss {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.warning-dismiss:hover {
+  color: #e0e0e0;
 }
