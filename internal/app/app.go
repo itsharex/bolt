@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 
 	"github.com/fhsinchy/bolt/internal/config"
 	"github.com/fhsinchy/bolt/internal/db"
@@ -361,16 +360,5 @@ func (a *App) OpenFolder(path string) error {
 }
 
 func openPath(path string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "linux":
-		cmd = exec.Command("xdg-open", path)
-	case "darwin":
-		cmd = exec.Command("open", path)
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", path)
-	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
-	}
-	return cmd.Start()
+	return exec.Command("xdg-open", path).Start()
 }
