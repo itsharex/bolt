@@ -12,9 +12,11 @@
 | Phase 2 — HTTP Server + Daemon | **COMPLETE** | 100% |
 | Phase 3 — Wails GUI + Frontend | **COMPLETE** | 100% |
 | Phase 4 — Browser Extension | **COMPLETE** | 100% |
-| Phase 5 — P1 Features | **IN PROGRESS** | ~60% |
-| Phase 6 — P2 Features | **NOT STARTED** | ~5% (config fields only) |
-| Phase 7 — P3 Features | **NOT STARTED** | ~5% (config fields only) |
+| Phase 5 — Linux-Only Focus Shift | **COMPLETE** | 100% |
+| Phase 6 — P1 Features | **IN PROGRESS** | ~60% |
+| Phase 7 — P2 Features | **NOT STARTED** | ~5% (config fields only) |
+| Phase 8 — P3 Features | **NOT STARTED** | ~5% (config fields only) |
+| Phase 9 — Steam Deck + Decky Plugin | **NOT STARTED** | 0% |
 
 ---
 
@@ -74,6 +76,16 @@ All deliverables built:
 - Graceful fallback on invalidated extension context (try-catch in content script)
 - Probe falls back from HEAD to GET on 403 (pre-signed S3/R2 URL support)
 
+## Phase 5: Linux-Only Focus Shift — COMPLETE
+
+Bolt now targets Linux only. Cross-platform code removed, docs updated.
+
+- Removed Windows/macOS code paths from `internal/notify/` (was: `osascript`, PowerShell; now: `notify-send` only)
+- Removed Windows/macOS code paths from `internal/app/` `openPath()` (was: `open`, `cmd /c start`; now: `xdg-open` only)
+- Updated PRD, TRD, README, STATUS, CLAUDE.md to reflect Linux-only focus
+- Added Steam Deck / Decky Plugin as Phase 9
+- Renumbered phases 5-7 → 6-8
+
 ---
 
 ## P0 Feature Status
@@ -110,7 +122,7 @@ All deliverables built:
 | Dark/light theme | Done — class-based toggle (system/light/dark), all components styled |
 | Keyboard shortcuts | Partial — Enter to probe, Escape to close dialogs; no global shortcuts |
 | Queue reordering (drag & drop) | Not implemented (`queue_order` model field exists, unused) |
-| Desktop notifications | Done — `internal/notify/` (`notify-send`, `osascript`, PowerShell) |
+| Desktop notifications | Done — `internal/notify/` (`notify-send`) |
 | Batch URL import | Not implemented |
 | Search/filter in download list | Done — `SearchBar` with client-side text filtering |
 | Extension popup | Done (`extensions/chrome/popup/`, `extensions/firefox/popup/`) |
@@ -138,6 +150,14 @@ All deliverables built:
 | Auto-shutdown/sleep | Not implemented |
 | Start on system boot | Done — `dist/bolt.service` systemd user unit, `make install` / `make uninstall` |
 | Firefox extension | Done (`extensions/firefox/`) |
+
+## Steam Deck + Decky Plugin Status
+
+| Feature | Status |
+|---------|--------|
+| Decky Loader plugin | Not started |
+| SteamOS systemd integration | Not started (existing `bolt.service` should work) |
+| QAM panel UI | Not started |
 
 ---
 

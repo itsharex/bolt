@@ -288,9 +288,7 @@ Features you may never need personally but are standard in download managers.
 |---------|-----------|-------------|
 | File categorization | Engine | Auto-sort downloads into subdirectories by type |
 | Proxy support (HTTP/SOCKS5) | Engine | Route downloads through a proxy |
-| Auto-shutdown/sleep | GUI | System action after all downloads complete |
-| Start on system boot | GUI | Register as startup application |
-| Firefox extension | Extension | Separate Manifest V2/V3 build |
+| Auto-shutdown/sleep | GUI | System action after all downloads complete (`systemctl suspend`) |
 
 ---
 
@@ -517,7 +515,7 @@ Configurable in extension options:
 
 - **Capture mode:** All downloads, or only files matching criteria.
 - **Minimum file size:** Only capture downloads above a threshold (e.g., 2 MB). This avoids capturing tiny files, images, and web assets that are fine in the browser.
-- **File extension whitelist:** Only capture specific types (e.g., `.zip`, `.iso`, `.tar.gz`, `.exe`, `.dmg`, `.mp4`, `.mkv`).
+- **File extension whitelist:** Only capture specific types (e.g., `.zip`, `.iso`, `.tar.gz`, `.deb`, `.rpm`, `.AppImage`, `.mp4`, `.mkv`).
 - **File extension blacklist:** Never capture specific types (e.g., `.html`, `.json`, `.xml`).
 - **Domain blocklist:** Never capture from specific domains (e.g., `localhost`, `127.0.0.1`, internal domains).
 
@@ -673,7 +671,7 @@ Location: `~/.config/bolt/config.json`
     "Video": [".mp4", ".mkv", ".avi", ".mov", ".webm"],
     "Compressed": [".zip", ".tar.gz", ".rar", ".7z", ".bz2"],
     "Documents": [".pdf", ".docx", ".xlsx", ".pptx"],
-    "Programs": [".exe", ".dmg", ".deb", ".rpm", ".AppImage"],
+    "Programs": [".deb", ".rpm", ".AppImage", ".flatpak"],
     "Music": [".mp3", ".flac", ".ogg", ".wav"],
     "Images": [".iso", ".img"]
   }
@@ -741,7 +739,7 @@ When categorization is enabled, the target directory is `<download_dir>/<categor
 | Video | `.mp4`, `.mkv`, `.avi`, `.mov`, `.webm`, `.flv` |
 | Compressed | `.zip`, `.tar.gz`, `.tar.bz2`, `.rar`, `.7z`, `.gz`, `.xz` |
 | Documents | `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.txt`, `.epub` |
-| Programs | `.exe`, `.msi`, `.dmg`, `.deb`, `.rpm`, `.AppImage`, `.sh` |
+| Programs | `.deb`, `.rpm`, `.AppImage`, `.flatpak`, `.sh` |
 | Music | `.mp3`, `.flac`, `.ogg`, `.wav`, `.aac` |
 | Disk Images | `.iso`, `.img` |
 | Other | Everything else (stays in base download directory) |
@@ -755,28 +753,27 @@ Optional feature: after all downloads complete, Bolt can:
 - Shut down the system (with a 60-second countdown + cancel option)
 - Put the system to sleep
 
-Implemented via OS-specific commands (`shutdown`, `systemctl suspend`, `pmset sleepnow`).
+Implemented via `systemctl poweroff` / `systemctl suspend`.
 
 ---
 
 ## 10. Platform Support
 
-### 10.1 Primary Targets
+### 10.1 Target Platform
+
+Bolt targets **Linux only** (x86_64, aarch64). This is a deliberate focus decision — Linux lacks a good, modern download manager, and going deep on one platform enables tighter desktop integration (D-Bus notifications, XDG portals, systemd, Steam Deck / Decky Loader) rather than spreading thin across three.
 
 | Platform | Status | Notes |
 |----------|--------|-------|
 | Linux (x86_64) | Primary | Wails + GTK/WebKit |
-| Windows (x86_64) | Primary | Wails + WebView2 |
-| macOS (ARM64 + x86_64) | Primary | Wails + WebKit |
+| Linux (aarch64) | Planned | Same stack, ARM64 builds |
 
 ### 10.2 Browser Extension
 
 | Browser | Status | Notes |
 |---------|--------|-------|
-| Chrome | Primary | Manifest V3 |
-| Edge | Primary | Same as Chrome (Chromium) |
-| Brave | Primary | Same as Chrome (Chromium) |
-| Firefox | Future | Requires separate Manifest V2/V3 build |
+| Chrome / Chromium | Primary | Manifest V3 |
+| Firefox | Primary | Manifest V3 with `browser.*` API |
 
 ---
 
@@ -851,13 +848,11 @@ No other external dependencies. Stdlib for HTTP server, routing, crypto, JSON, e
 # Development
 wails dev                        # Hot-reload GUI development
 
-# Production builds
-wails build -platform linux/amd64
-wails build -platform windows/amd64
-wails build -platform darwin/universal
+# Production build
+make build                       # Frontend + Go build with Wails tags
 
 # Extension
-cd extension && zip -r bolt-capture.zip .
+make build-extension             # Build Chrome + Firefox extension zips
 ```
 
 ---
@@ -926,7 +921,19 @@ Build Bolt Capture for Chromium browsers with P0 features.
 
 **Exit criteria:** Install extension in Chrome, click a download link on a website, and it appears in Bolt with full speed and correct authentication. Expired downloads can be refreshed through all three tiers.
 
-### Phase 5 — P1 Features — Week 6–7
+### Phase 5 — Linux-Only Focus Shift
+
+Remove cross-platform code and update documentation to reflect Linux-only targeting.
+
+**Deliverables:**
+
+- Remove Windows/macOS code paths from `internal/notify/` and `internal/app/`
+- Update PRD, TRD, README, STATUS, CLAUDE.md to reflect Linux-only focus
+- Add Steam Deck / Decky Plugin as Phase 9
+
+**Exit criteria:** No Windows/macOS code paths remain. All docs reflect Linux-only focus.
+
+### Phase 6 — P1 Features
 
 Add the features that make daily use smoother.
 
@@ -946,7 +953,7 @@ Add the features that make daily use smoother.
 
 **Exit criteria:** A polished v1 that handles all common daily download scenarios comfortably.
 
-### Phase 6 — P2 Features — Post-v1
+### Phase 7 — P2 Features — Post-v1
 
 Add incrementally as needed. No fixed timeline.
 
@@ -958,15 +965,24 @@ Add incrementally as needed. No fixed timeline.
 - Extension options page
 - CLI `--json` output
 
-### Phase 7 — P3 Features — Whenever
+### Phase 8 — P3 Features — Whenever
 
 Low priority, add only if you feel the need.
 
 - File categorization by type
 - Proxy support (HTTP/SOCKS5)
 - Auto-shutdown/sleep after downloads complete
-- Start on system boot
-- Firefox extension
+
+### Phase 9 — Steam Deck + Decky Plugin
+
+Dedicated phase for Steam Deck optimization.
+
+**Deliverables:**
+
+- Decky Loader plugin (Python backend + React frontend)
+- Bolt daemon optimized for SteamOS (Arch-based, systemd)
+- QAM panel showing download progress, pause/resume controls
+- Documentation for SteamOS / Steam Deck setup
 
 ---
 
@@ -991,7 +1007,7 @@ Low priority, add only if you feel the need.
 | CDN URLs expire before all segments complete | Segments fail mid-download | Capture and store full cookie jar; implement URL refresh by re-requesting from original referer page |
 | Servers rate-limit many connections | Slower than expected or blocked | Detect 429 responses, auto-reduce segment count, respect Retry-After headers |
 | Manifest V3 limits on download interception | Extension can't reliably capture all downloads | Use `chrome.downloads` API which is well-supported; fall back to context menu for edge cases |
-| Wails WebView differences across OS | UI inconsistencies | Test on all three platforms early; use simple CSS; avoid platform-specific web APIs |
+| Wails WebKit version differences across distros | UI inconsistencies | Test on major distros (Fedora, Ubuntu, Arch); use webkit2_41 build tag where needed |
 | SQLite write contention under heavy load | Slow progress persistence | Use WAL mode, batch writes, and accept eventual consistency for progress (worst case: lose ~2s of progress on crash) |
 
 ---

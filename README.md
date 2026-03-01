@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Work in progress.</strong> Core engine, HTTP API, CLI, GUI, and browser extensions are functional. Working toward a stable v1.0 release.
+  <strong>The Linux download manager.</strong> Fast, segmented downloads with a clean GUI, browser integration, and deep Linux desktop integration. Working toward a stable v1.0 release.
 </p>
 
 ## Features
@@ -156,41 +156,13 @@ frontend/           Svelte 5 + TypeScript + Tailwind CSS
 | 2. HTTP Server | REST API, WebSocket progress, daemon mode | Complete |
 | 3. Desktop GUI | Wails app, system tray, Svelte frontend | Complete |
 | 4. Browser Extension | Chrome + Firefox download interception | Complete |
-| 5. P1 Features | Speed limiter, dark theme, notifications, keyboard shortcuts, batch import | In progress |
-| 6. P2 Features | Checksum verification, download scheduling, clipboard monitoring | Planned |
-| 7. P3 Features | Proxy support, file categorization, auto-shutdown | Planned |
+| 5. Linux-Only Shift | Remove cross-platform code, update docs, Linux-only focus | Complete |
+| 6. P1 Features | Speed limiter, dark theme, notifications, keyboard shortcuts, batch import | In progress |
+| 7. P2 Features | Checksum verification, download scheduling, clipboard monitoring | Planned |
+| 8. P3 Features | Proxy support, file categorization, auto-shutdown | Planned |
+| 9. Steam Deck | Decky Loader plugin, SteamOS optimization | Planned |
 
 See `STATUS.md` for detailed per-feature status.
-
-## Building on Other Platforms
-
-Bolt uses Go and Wails, which support macOS and Windows. While official builds target Linux only, you can build from source on other platforms:
-
-**macOS:**
-
-```bash
-# Install prerequisites
-brew install go node pnpm
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-# Build
-wails build
-```
-
-Requires Xcode command line tools (`xcode-select --install`).
-
-**Windows:**
-
-```powershell
-# Install prerequisites: Go, Node.js, pnpm
-# WebView2 runtime (included in Windows 11, install separately on Windows 10)
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-# Build
-wails build
-```
-
-Run `wails doctor` to verify your environment on any platform.
 
 ## Tech Stack
 

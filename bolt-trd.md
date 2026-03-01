@@ -52,7 +52,7 @@ Decisions made during TRD authoring that refine ambiguities in the PRD.
 | CSS framework | Tailwind CSS v4 | Utility-first, small production builds, good Svelte integration |
 | SQLite driver | `modernc.org/sqlite` | Pure Go, no CGO, cross-compiles cleanly |
 | WebSocket library | `nhooyr.io/websocket` | Stdlib-compatible, context-aware, well-maintained |
-| Wails version | v2 (latest stable) | Mature, good Linux/macOS/Windows support |
+| Wails version | v2 (latest stable) | Mature, good Linux support via GTK/WebKit |
 | Test framework | stdlib `testing` + `net/http/httptest` | No external test dependencies; table-driven tests |
 | ULID library | `github.com/oklog/ulid/v2` | Battle-tested, small, well-maintained |
 
@@ -248,9 +248,7 @@ bolt/
 │       ├── icon-48.png
 │       └── icon-128.png
 ├── build/                          # Wails build config
-│   ├── linux/
-│   ├── windows/
-│   └── darwin/
+│   └── linux/
 ├── dist/                           # Build output (gitignored)
 ├── testdata/                       # Test fixtures
 ├── bolt.service                    # Systemd user service file
@@ -1102,10 +1100,8 @@ func (s *Store) DeleteSegments(ctx context.Context, downloadID string) error
 | Platform | Path |
 |----------|------|
 | Linux | `~/.config/bolt/config.json` |
-| macOS | `~/Library/Application Support/bolt/config.json` |
-| Windows | `%APPDATA%\bolt\config.json` |
 
-Use `os.UserConfigDir()` for platform-appropriate path.
+Uses `os.UserConfigDir()` which returns `~/.config` on Linux.
 
 ### 9.2 Config Struct
 
@@ -2585,7 +2581,7 @@ make coverage
 ### 20.1 Makefile
 
 ```makefile
-.PHONY: dev build build-linux build-windows build-darwin test lint clean
+.PHONY: dev build test lint clean
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -X main.version=$(VERSION)
@@ -2594,21 +2590,15 @@ LDFLAGS := -X main.version=$(VERSION)
 dev:
 	wails dev
 
-# Production builds
-build-linux:
-	wails build -platform linux/amd64 -ldflags "$(LDFLAGS)"
-
-build-windows:
-	wails build -platform windows/amd64 -ldflags "$(LDFLAGS)"
-
-build-darwin:
-	wails build -platform darwin/universal -ldflags "$(LDFLAGS)"
-
-build: build-linux build-windows build-darwin
+# Production build (Linux only)
+build:
+	cd frontend && pnpm install && pnpm build
+	CGO_ENABLED=1 go build -tags desktop,production,webkit2_41 -ldflags "$(LDFLAGS)" -o bolt ./cmd/bolt/
 
 # Extension
 build-extension:
-	cd extension && zip -r ../dist/bolt-capture.zip . -x ".*"
+	cd extensions/chrome && zip -r ../../dist/bolt-capture-chrome.zip . -x ".*"
+	cd extensions/firefox && zip -r ../../dist/bolt-capture-firefox.zip . -x ".*"
 
 # Testing
 test:
@@ -2648,10 +2638,9 @@ ci: lint test-race test-integration build
 
 ```
 dist/
-├── bolt-linux-amd64              # Linux binary
-├── bolt-windows-amd64.exe        # Windows binary
-├── bolt-darwin-universal          # macOS universal binary
-└── bolt-capture.zip              # Browser extension
+├── bolt                           # Linux binary
+├── bolt-capture-chrome.zip        # Chrome browser extension
+└── bolt-capture-firefox.zip       # Firefox browser extension
 ```
 
 ### 20.3 Version Injection

@@ -1,6 +1,6 @@
 # Bolt — Download Manager
 
-Fast, segmented download manager built with Go. See `bolt-prd.md` and `bolt-trd.md` for full specs.
+Fast, segmented download manager for **Linux**. See `bolt-prd.md` and `bolt-trd.md` for full specs.
 
 ## Project Info
 
@@ -105,7 +105,22 @@ Chromium Manifest V3 extension ("Bolt Capture") that intercepts browser download
 - Step 4: Popup UI — config, connection test, capture toggle
 - Step 5: Makefile — `build-extension` target
 
+### Phase 5: Linux-Only Focus Shift (COMPLETE)
+Removed cross-platform code, updated all docs to reflect Linux-only targeting.
+
+**What was done:**
+- Removed Windows/macOS code paths from `internal/notify/notify.go` (was: `runtime.GOOS` switch with `osascript` and PowerShell; now: direct `notify-send` call)
+- Removed Windows/macOS code paths from `internal/app/app.go` `openPath()` (was: `runtime.GOOS` switch; now: direct `xdg-open` call)
+- Updated PRD, TRD, README, STATUS, CLAUDE.md
+- Added Steam Deck / Decky Plugin as Phase 9
+- Renumbered P1/P2/P3 feature phases to 6/7/8
+
+### Phase 9: Steam Deck + Decky Plugin (NOT STARTED)
+Decky Loader plugin (Python + React) as thin client to Bolt's REST API. QAM panel for Gaming Mode.
+
 ## Key Design Decisions
+
+**Linux-Only Focus:** Bolt targets Linux exclusively. This enables deep desktop integration (D-Bus, XDG portals, systemd, Steam Deck / Decky Loader) instead of lowest-common-denominator cross-platform abstractions. The Go stdlib functions like `os.UserConfigDir()` still work correctly on Linux and are kept as-is.
 
 **Phase 1:** CLI embedded the engine directly.
 
@@ -121,7 +136,7 @@ Six features for daily-driver readiness:
 **What was built:**
 - Global speed limiter — `golang.org/x/time/rate`, `Engine.SetSpeedLimit()`, throttles all segments via shared `rate.Limiter`
 - Complete settings panel — speed limit (KB/MB) + theme selector in SettingsDialog
-- Desktop notifications — `internal/notify/` package, `notify-send` on Linux, `osascript` on macOS, PowerShell toast on Windows
+- Desktop notifications — `internal/notify/` package, `notify-send` on Linux
 - Dark theme — Tailwind `@custom-variant dark`, class-based toggle on `<html>`, system/light/dark modes, all 10 components updated
 - Systemd user unit — `dist/bolt.service`, `make install` / `make uninstall`
 - Firefox extension support — separate `extensions/firefox/` directory using native `browser.*` API, no polyfills
@@ -193,7 +208,7 @@ internal/
   cli/                     CLI HTTP client
   pid/                     PID file management
   tray/                    System tray (energye/systray, white icon embedded)
-  notify/                  Desktop notifications (notify-send, osascript, PowerShell)
+  notify/                  Desktop notifications (notify-send)
   testutil/                Test helpers (httptest server)
 extensions/
   chrome/                  Chrome browser extension (chrome.* API)
