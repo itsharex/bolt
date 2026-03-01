@@ -19,13 +19,20 @@ import (
 // App is the Wails application struct. Its exported methods are available
 // as IPC bindings from the frontend.
 type App struct {
-	ctx    context.Context
-	engine *engine.Engine
-	store  *db.Store
-	cfg    *config.Config
-	bus    *event.Bus
-	queue  *queue.Manager
-	subID  int
+	ctx            context.Context
+	engine         *engine.Engine
+	store          *db.Store
+	cfg            *config.Config
+	bus            *event.Bus
+	queue          *queue.Manager
+	subID          int
+	windowShowHook func()
+}
+
+// SetWindowShowHook registers a function called after the window is raised
+// via a WindowShow event. GUI mode uses this to sync tray state.
+func (a *App) SetWindowShowHook(fn func()) {
+	a.windowShowHook = fn
 }
 
 // New creates a new App.
@@ -90,6 +97,11 @@ func (a *App) OnStartup(ctx context.Context) {
 				wailsRuntime.EventsEmit(ctx, "refresh_needed", map[string]any{
 					"id": e.DownloadID,
 				})
+			case event.WindowShow:
+				wailsRuntime.WindowShow(ctx)
+				if a.windowShowHook != nil {
+					a.windowShowHook()
+				}
 			}
 		}
 	}()

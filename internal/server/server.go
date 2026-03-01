@@ -53,6 +53,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("PUT /api/config", s.handleUpdateConfig)
 	mux.HandleFunc("GET /api/stats", s.handleGetStats)
 	mux.HandleFunc("POST /api/probe", s.handleProbe)
+	mux.HandleFunc("POST /api/window/show", s.handleShowWindow)
 	mux.HandleFunc("GET /ws", s.handleWebSocket)
 
 	// Apply middleware chain: recovery -> logging -> cors -> auth

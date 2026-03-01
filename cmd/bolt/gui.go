@@ -20,6 +20,9 @@ func launchGUI() {
 	defer d.cleanup()
 
 	application := app.New(d.engine, d.store, d.cfg, d.bus, d.queueMgr)
+	application.SetWindowShowHook(func() {
+		tray.SetVisible(true)
+	})
 
 	// Start queue manager goroutine
 	go d.queueMgr.Run(d.ctx)
@@ -67,20 +70,27 @@ func launchGUI() {
 		application.OnShutdown(ctx)
 	}
 
-	hideOnClose := d.cfg.MinimizeToTray
+	minimizeToTray := d.cfg.MinimizeToTray
 
 	err := wails.Run(&options.App{
-		Title:            "Bolt",
-		Width:            960,
-		Height:           640,
-		MinWidth:         640,
-		MinHeight:        480,
-		HideWindowOnClose: hideOnClose,
+		Title:     "Bolt",
+		Width:     960,
+		Height:    640,
+		MinWidth:  640,
+		MinHeight: 480,
 		AssetServer: &assetserver.Options{
 			Assets: bolt.FrontendAssets,
 		},
 		OnStartup:  onStartup,
 		OnShutdown: onShutdown,
+		OnBeforeClose: func(ctx context.Context) (prevent bool) {
+			if minimizeToTray {
+				wailsRuntime.WindowHide(ctx)
+				tray.SetVisible(false)
+				return true
+			}
+			return false
+		},
 		Bind: []any{
 			application,
 		},

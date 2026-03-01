@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/fhsinchy/bolt/internal/config"
+	"github.com/fhsinchy/bolt/internal/event"
 	"github.com/fhsinchy/bolt/internal/model"
 )
 
@@ -260,6 +261,11 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleShowWindow(w http.ResponseWriter, r *http.Request) {
+	s.bus.Publish(event.WindowShow{})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // mapEngineError maps engine sentinel errors to HTTP status codes.

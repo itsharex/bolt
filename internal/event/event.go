@@ -72,6 +72,11 @@ type RefreshNeeded struct {
 
 func (RefreshNeeded) EventType() string { return "refresh_needed" }
 
+// WindowShow is emitted to signal the GUI window should be raised.
+type WindowShow struct{}
+
+func (WindowShow) EventType() string { return "window_show" }
+
 const subscriberBufferSize = 256
 
 // Bus is a publish/subscribe event bus.

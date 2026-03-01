@@ -13,37 +13,54 @@ type Callbacks struct {
 	OnQuit      func()
 }
 
-var visible = true
+var (
+	visible   = true
+	showItem  *systray.MenuItem
+	callbacks Callbacks
+)
 
 // Start initializes the system tray. It should be called after the main
 // window is created. It uses RunWithExternalLoop so it does not block
 // or interfere with Wails' main thread.
 func Start(cb Callbacks) {
-	systray.RunWithExternalLoop(func() {
+	callbacks = cb
+
+	start, _ := systray.RunWithExternalLoop(func() {
 		systray.SetIcon(iconData)
 		systray.SetTitle("Bolt")
 		systray.SetTooltip("Bolt Download Manager")
 
-		mShow := systray.AddMenuItem("Hide", "Toggle window visibility")
+		showItem = systray.AddMenuItem("Hide", "Toggle window visibility")
 		systray.AddSeparator()
 		mPause := systray.AddMenuItem("Pause All", "Pause all downloads")
 		mResume := systray.AddMenuItem("Resume All", "Resume all downloads")
 		systray.AddSeparator()
 		mQuit := systray.AddMenuItem("Quit", "Quit Bolt")
 
-		mShow.Click(func() {
+		showItem.Click(func() {
 			if visible {
+				visible = false
+				showItem.SetTitle("Show")
 				if cb.OnHide != nil {
 					cb.OnHide()
 				}
-				mShow.SetTitle("Show")
-				visible = false
 			} else {
+				visible = true
+				showItem.SetTitle("Hide")
 				if cb.OnShow != nil {
 					cb.OnShow()
 				}
-				mShow.SetTitle("Hide")
+			}
+		})
+
+		// Click on the tray icon itself shows the window if hidden.
+		systray.SetOnClick(func(_ systray.IMenu) {
+			if !visible {
 				visible = true
+				showItem.SetTitle("Hide")
+				if cb.OnShow != nil {
+					cb.OnShow()
+				}
 			}
 		})
 
@@ -65,6 +82,26 @@ func Start(cb Callbacks) {
 			}
 		})
 	}, nil)
+	start()
+}
+
+// SetVisible updates the tray's tracked visibility state and the menu item
+// label WITHOUT firing callbacks. Use this to sync tray state when the
+// window is shown/hidden from outside the tray (e.g. window close button,
+// or the WindowShow API event).
+func SetVisible(v bool) {
+	if v == visible {
+		return
+	}
+	visible = v
+	if showItem == nil {
+		return
+	}
+	if visible {
+		showItem.SetTitle("Hide")
+	} else {
+		showItem.SetTitle("Show")
+	}
 }
 
 // Quit cleans up the system tray.

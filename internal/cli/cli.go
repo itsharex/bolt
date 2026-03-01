@@ -316,6 +316,20 @@ func (c *Client) Refresh(ctx context.Context, id, newURL string) error {
 	return nil
 }
 
+// ShowWindow asks the running daemon to raise its GUI window.
+func (c *Client) ShowWindow(ctx context.Context) error {
+	resp, err := c.post(ctx, "/api/window/show", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return readError(resp)
+	}
+	return nil
+}
+
 // watchProgress connects to the WebSocket and displays progress for a download.
 func (c *Client) watchProgress(ctx context.Context, downloadID, filename string) error {
 	wsURL := fmt.Sprintf("ws%s/ws?token=%s",

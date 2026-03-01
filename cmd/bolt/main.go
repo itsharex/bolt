@@ -26,7 +26,10 @@ const version = "0.3.0-dev"
 
 func main() {
 	if len(os.Args) < 2 {
-		// No args — launch GUI.
+		// No args — launch GUI, or raise existing window.
+		if raiseExistingWindow() {
+			return
+		}
 		launchGUI()
 		return
 	}
@@ -45,6 +48,9 @@ func main() {
 		if headless {
 			launchHeadless()
 		} else {
+			if raiseExistingWindow() {
+				return
+			}
 			launchGUI()
 		}
 	case "stop":
@@ -415,6 +421,26 @@ func runRefresh(ctx context.Context, c *cli.Client, args []string) error {
 		os.Exit(1)
 	}
 	return c.Refresh(ctx, args[0], args[1])
+}
+
+// raiseExistingWindow checks if a daemon is already running. If so, it asks the
+// daemon to show its window and exits. If the daemon is running but unreachable,
+// it exits with an informative error rather than falling through to start a
+// second instance (which would crash on the PID file check).
+// Returns false only when no daemon is running.
+func raiseExistingWindow() bool {
+	if !pid.IsRunning() {
+		return false
+	}
+	c, err := cli.NewClient()
+	if err != nil {
+		fatal(fmt.Errorf("bolt is already running but could not connect: %w", err))
+	}
+	if err := c.ShowWindow(context.Background()); err != nil {
+		fatal(fmt.Errorf("bolt is already running but could not raise window: %w", err))
+	}
+	fmt.Println("Bolt is already running — window raised.")
+	return true
 }
 
 func fatal(err error) {
