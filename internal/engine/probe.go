@@ -45,7 +45,9 @@ func probeHEAD(ctx context.Context, client *http.Client, rawURL string, headers 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusForbidden {
+	if resp.StatusCode == http.StatusMethodNotAllowed ||
+		resp.StatusCode == http.StatusForbidden ||
+		resp.StatusCode == http.StatusUnauthorized {
 		return nil, nil // signal caller to fall back
 	}
 
