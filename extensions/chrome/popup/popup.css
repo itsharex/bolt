@@ -116,10 +116,6 @@ input[type="password"]:focus {
   color: #e0e0e0;
 }
 
-.required {
-  color: #f87171;
-}
-
 .hint {
   display: block;
   font-size: 11px;

@@ -87,27 +87,6 @@ h1 {
   color: #a0a0b0;
 }
 
-.btn {
-  display: inline-block;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.2s;
-  margin-top: 12px;
-}
-
-.btn-primary {
-  background: #6366f1;
-  color: #ffffff;
-}
-
-.btn-primary:hover {
-  background: #5558e6;
-}
-
 .footer {
   text-align: center;
   font-size: 13px;

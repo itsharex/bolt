@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bolt Capture",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Capture browser downloads and send them to Bolt",
   "permissions": ["downloads", "downloads.ui", "cookies", "contextMenus", "storage", "notifications"],
   "host_permissions": ["http://127.0.0.1:*/*", "http://localhost:*/*", "<all_urls>"],

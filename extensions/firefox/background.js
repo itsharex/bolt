@@ -86,7 +86,7 @@ async function sendToBolt(config, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (config.authToken) headers['Authorization'] = `Bearer ${config.authToken}`;
 
-  log('POST /api/downloads', JSON.stringify(body));
+  log('POST /api/downloads', body.url);
 
   const resp = await fetch(`${config.serverUrl}/api/downloads`, {
     method: 'POST',
@@ -226,7 +226,7 @@ function showError(title, message) {
   browser.notifications.create({
     type: 'basic',
     iconUrl: 'icons/icon-128.png',
-    title,
+    title: 'Error: ' + title,
     message,
   });
 }
@@ -235,7 +235,7 @@ function showSuccess(title, message) {
   browser.notifications.create({
     type: 'basic',
     iconUrl: 'icons/icon-128.png',
-    title,
+    title: 'Success: ' + title,
     message,
   });
 }

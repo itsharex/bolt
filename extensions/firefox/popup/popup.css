@@ -116,10 +116,6 @@ input[type="password"]:focus {
   color: #e0e0e0;
 }
 
-.required {
-  color: #f87171;
-}
-
 .hint {
   display: block;
   font-size: 11px;
@@ -228,56 +224,6 @@ input[type="password"]:focus {
 
 .btn-secondary:hover:not(:disabled) {
   background: #3a3a5a;
-}
-
-.warning-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 14px;
-  padding: 10px 12px;
-  background: #2a2210;
-  border-left: 3px solid #f59e0b;
-  border-radius: 0 6px 6px 0;
-  font-size: 11px;
-  color: #d4d0c8;
-  line-height: 1.5;
-}
-
-.warning-banner.hidden {
-  display: none;
-}
-
-.warning-content {
-  flex: 1;
-}
-
-.warning-content strong {
-  color: #fbbf24;
-}
-
-.warning-content a {
-  color: #818cf8;
-  text-decoration: none;
-}
-
-.warning-content a:hover {
-  text-decoration: underline;
-}
-
-.warning-dismiss {
-  background: none;
-  border: none;
-  color: #6b7280;
-  font-size: 16px;
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.warning-dismiss:hover {
-  color: #e0e0e0;
 }
 
 .filter-section {
