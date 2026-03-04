@@ -3,7 +3,13 @@
 </p>
 
 <p align="center">
-  <strong>The Linux download manager.</strong> Fast, segmented downloads with a clean GUI, browser integration, and deep Linux desktop integration. Working toward a stable v1.0 release.
+  <strong>The Linux download manager.</strong> Fast, segmented downloads with a clean GUI, browser integration, and deep Linux desktop integration.
+</p>
+
+<p align="center">
+  <a href="https://github.com/fhsinchy/bolt/actions/workflows/ci.yml"><img src="https://github.com/fhsinchy/bolt/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/fhsinchy/bolt/releases/latest"><img src="https://img.shields.io/github/v/release/fhsinchy/bolt" alt="Release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/fhsinchy/bolt" alt="License" /></a>
 </p>
 
 ## Features
@@ -31,28 +37,62 @@
 
 ![Bolt in dark and light mode](bolt-light-dark.png)
 
-## Quick Start
+## Install
+
+Download the latest release from [GitHub Releases](https://github.com/fhsinchy/bolt/releases/latest):
+
+```bash
+# Download and extract
+tar xzf bolt-linux-amd64-v*.tar.gz
+cd bolt-linux-amd64
+
+# Install binary, systemd unit, desktop entry, and icon
+mkdir -p ~/.local/bin ~/.config/systemd/user ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps
+cp bolt ~/.local/bin/
+cp bolt.service ~/.config/systemd/user/
+sed "s|Exec=bolt|Exec=$HOME/.local/bin/bolt|" bolt.desktop > ~/.local/share/applications/bolt.desktop
+cp appicon.png ~/.local/share/icons/hicolor/256x256/apps/bolt.png
+systemctl --user daemon-reload
+systemctl --user enable --now bolt
+```
+
+Make sure `~/.local/bin` is in your `PATH`.
+
+## Build from Source
 
 ### Prerequisites
 
-**Fedora:**
+**System dependencies:**
 
+Fedora:
 ```bash
-sudo dnf install golang gtk3-devel webkit2gtk4.1-devel gcc-c++ pnpm
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
+sudo dnf install golang gtk3-devel webkit2gtk4.1-devel gcc-c++
 ```
 
-**Ubuntu / Debian:**
-
+Ubuntu / Debian:
 ```bash
-sudo apt install golang libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pnpm
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
+sudo apt install golang libgtk-3-dev libwebkit2gtk-4.1-dev build-essential
 ```
 
-**Arch:**
-
+Arch:
 ```bash
-sudo pacman -S go gtk3 webkit2gtk-4.1 pnpm
+sudo pacman -S go gtk3 webkit2gtk-4.1
+```
+
+**Node.js** (see [nodejs.org/en/download](https://nodejs.org/en/download) for other methods):
+```bash
+# Using fnm
+curl -fsSL https://fnm.vercel.app/install | bash
+fnm use --install-if-missing 20
+```
+
+**pnpm** (see [pnpm.io/installation](https://pnpm.io/installation) for other methods):
+```bash
+curl -fsSL https://get.pnpm.io/install.sh | sh -
+```
+
+**Wails CLI:**
+```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```
 
@@ -181,4 +221,4 @@ See `docs/STATUS.md` for detailed per-feature status.
 
 ## License
 
-*TBD*
+[MIT](LICENSE)
