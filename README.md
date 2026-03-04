@@ -9,7 +9,8 @@
 <p align="center">
   <a href="https://github.com/fhsinchy/bolt/actions/workflows/ci.yml"><img src="https://github.com/fhsinchy/bolt/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/fhsinchy/bolt/releases/latest"><img src="https://img.shields.io/github/v/release/fhsinchy/bolt" alt="Release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/fhsinchy/bolt" alt="License" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/fhsinchy/bolt?link=LICENSE" alt="License" /></a>
+
 </p>
 
 ## Features
