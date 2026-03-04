@@ -140,7 +140,7 @@ Bolt now targets Linux only. Cross-platform code removed, docs updated.
 
 | Feature | Status |
 |---------|--------|
-| Start on system boot | Done — `dist/bolt.service` systemd user unit, `make install` / `make uninstall` |
+| Start on system boot | Done — `packaging/bolt.service` systemd user unit, `make install` / `make uninstall` |
 | Firefox extension | Done (`extensions/firefox/`) |
 
 ## Steam Deck + Decky Plugin Status

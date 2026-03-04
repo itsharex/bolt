@@ -510,8 +510,8 @@ git commit -m "feat: add inputmode and autocomplete hints for Steam Deck virtual
 
 The current `make install`:
 - Copies binary to `~/.local/bin/`
-- Copies `dist/bolt.service` to `~/.config/systemd/user/`
-- Copies `dist/bolt.desktop` to `~/.local/share/applications/`
+- Copies `packaging/bolt.service` to `~/.config/systemd/user/`
+- Copies `packaging/bolt.desktop` to `~/.local/share/applications/`
 - Copies icon to `~/.local/share/icons/hicolor/256x256/apps/`
 - Runs `systemctl --user daemon-reload`
 

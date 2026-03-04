@@ -100,9 +100,9 @@ install-deck: build
 	         ~/.config/systemd/user
 	cp bolt ~/.local/bin/bolt
 	cp build/appicon.png ~/.local/share/icons/hicolor/256x256/apps/bolt.png
-	sed 's|Exec=bolt|Exec=$(HOME)/.local/bin/bolt|' dist/bolt.desktop \
+	sed 's|Exec=bolt|Exec=$(HOME)/.local/bin/bolt|' packaging/bolt.desktop \
 	    > ~/.local/share/applications/bolt.desktop
-	sed 's|ExecStart=.*|ExecStart=$(HOME)/.local/bin/bolt|' dist/bolt.service \
+	sed 's|ExecStart=.*|ExecStart=$(HOME)/.local/bin/bolt|' packaging/bolt.service \
 	    > ~/.config/systemd/user/bolt.service
 	systemctl --user daemon-reload
 	systemctl --user enable --now bolt.service

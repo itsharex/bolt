@@ -46,12 +46,13 @@ install: build
 	mkdir -p ~/.local/bin
 	cp $(BINARY) ~/.local/bin/
 	mkdir -p ~/.config/systemd/user
-	cp dist/bolt.service ~/.config/systemd/user/
+	cp packaging/bolt.service ~/.config/systemd/user/
 	mkdir -p ~/.local/share/applications
-	cp dist/bolt.desktop ~/.local/share/applications/
+	cp packaging/bolt.desktop ~/.local/share/applications/
 	mkdir -p ~/.local/share/icons/hicolor/256x256/apps
 	cp build/appicon.png ~/.local/share/icons/hicolor/256x256/apps/bolt.png
 	systemctl --user daemon-reload
+	systemctl --user enable bolt
 
 uninstall:
 	-systemctl --user stop bolt

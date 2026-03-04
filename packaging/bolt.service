@@ -1,0 +1,13 @@
+[Unit]
+Description=Bolt Download Manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/bolt start --headless
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

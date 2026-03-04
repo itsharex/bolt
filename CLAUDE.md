@@ -41,7 +41,7 @@ Wails' `linux.Options{Icon: []byte}` calls `gtk_window_set_icon()`, which only w
 - `extensions/{chrome,firefox}/icons/` — 16, 48, 128px variants for browser extensions
 - `images/icon.png` — full-resolution source icon (1536x1024), used to generate all of the above
 - `images/banner.png` — repo banner for README
-- `dist/bolt.desktop` — desktop entry file for Wayland icon resolution
+- `packaging/bolt.desktop` — desktop entry file for Wayland icon resolution
 
 ## Development Phases
 
@@ -161,7 +161,7 @@ Six features for daily-driver readiness:
 - Complete settings panel — speed limit (KB/MB) + theme selector in SettingsDialog
 - Desktop notifications — `internal/notify/` package, `notify-send` on Linux
 - Dark theme — Tailwind `@custom-variant dark`, class-based toggle on `<html>`, system/light/dark modes, all 10 components updated
-- Systemd user unit — `dist/bolt.service`, `make install` / `make uninstall`
+- Systemd user unit — `packaging/bolt.service`, `make install` / `make uninstall`
 - Firefox extension support — separate `extensions/firefox/` directory using native `browser.*` API, no polyfills
 
 ## Commands

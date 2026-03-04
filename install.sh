@@ -221,9 +221,35 @@ DESKTOP
         warn "Icon not found in release — Wayland app icon may not display"
     fi
 
-    # Refresh systemd if available
+    # Install and enable systemd user unit
     if command -v systemctl > /dev/null 2>&1; then
-        systemctl --user daemon-reload 2>/dev/null || true
+        unit_dir="${HOME}/.config/systemd/user"
+        mkdir -p "$unit_dir"
+        if [ -f "${tmpdir}/bolt.service" ]; then
+            cp "${tmpdir}/bolt.service" "${unit_dir}/bolt.service"
+        else
+            # Generate inline if not in tarball
+            cat > "${unit_dir}/bolt.service" << 'UNIT'
+[Unit]
+Description=Bolt Download Manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/bolt start --headless
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+UNIT
+        fi
+        systemctl --user daemon-reload
+        systemctl --user enable bolt
+        info "Installed and enabled systemd user unit"
+    else
+        warn "systemctl not found — Bolt won't auto-start on boot"
     fi
 
     # Update icon cache if available
