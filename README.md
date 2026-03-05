@@ -73,11 +73,19 @@ systemctl --user enable --now bolt
 
 ## Browser Extension
 
-Bolt ships browser extensions for Chrome and Firefox that intercept downloads and forward them to Bolt.
+Bolt ships browser extensions for Chrome and Firefox that intercept downloads and forward them to Bolt. Download the latest extension from [GitHub Releases](https://github.com/fhsinchy/bolt/releases/latest).
 
-**Chrome:** Open `chrome://extensions`, enable Developer mode, click "Load unpacked", and select `extensions/chrome/`.
+**Chrome:**
 
-**Firefox:** Open `about:debugging#/runtime/this-firefox`, click "Load Temporary Add-on", and select any file inside `extensions/firefox/`.
+1. Download `bolt-capture-chrome.zip` from the latest release
+2. Open `chrome://extensions` and enable **Developer mode**
+3. Drag and drop the `.zip` file onto the page
+
+**Firefox:**
+
+1. Download `bolt-capture-firefox.xpi` from the latest release
+2. Open `about:addons`, click the gear icon, and select **Install Add-on From File...**
+3. Select the `.xpi` file
 
 The extension popup lets you configure the server URL and auth token. On first install, a welcome page walks you through setup.
 

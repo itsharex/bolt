@@ -44,6 +44,11 @@ jobs:
             -ldflags "-X main.version=$TAG" \
             -o bolt ./cmd/bolt/
 
+      - name: Build extensions
+        run: |
+          cd extensions/chrome && zip -r ../../bolt-capture-chrome.zip . -x ".*"
+          cd ../../extensions/firefox && zip -r ../../bolt-capture-firefox.xpi . -x ".*"
+
       - name: Package tarball
         env:
           TAG: ${{ github.ref_name }}
@@ -84,4 +89,6 @@ jobs:
           gh release create "$TAG" \
             --title "$TAG" \
             --notes-file changelog.md \
-            "bolt-linux-amd64-${TAG}.tar.gz"
+            "bolt-linux-amd64-${TAG}.tar.gz" \
+            bolt-capture-chrome.zip \
+            bolt-capture-firefox.xpi
