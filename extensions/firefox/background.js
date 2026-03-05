@@ -23,6 +23,10 @@ const BLOCKED_EXTENSIONS = ['.html', '.htm', '.json', '.xml', '.js', '.css'];
 // Track URLs we re-initiated so we don't intercept them again (infinite loop guard).
 const redownloadUrls = new Set();
 
+// Timestamp when this background script session started. Used to ignore downloads
+// that the browser resumes/retries from a previous session on browser restart.
+const serviceWorkerStartTime = Date.now();
+
 // --- Logging ---
 
 function log(...args) {
@@ -407,6 +411,15 @@ browser.downloads.onCreated.addListener(async (downloadItem) => {
     redownloadUrls.delete(url);
     log('Skipping re-initiated download:', url);
     return;
+  }
+
+  // Skip downloads that started before this background script session (browser restart resumes).
+  if (downloadItem.startTime) {
+    const startMs = new Date(downloadItem.startTime).getTime();
+    if (startMs < serviceWorkerStartTime) {
+      log('Skipping (pre-existing download from previous session):', url);
+      return;
+    }
   }
 
   const config = await getConfig();

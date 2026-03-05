@@ -23,6 +23,10 @@ const BLOCKED_EXTENSIONS = ['.html', '.htm', '.json', '.xml', '.js', '.css'];
 // Track URLs we re-initiated so we don't intercept them again (infinite loop guard).
 const redownloadUrls = new Set();
 
+// Timestamp when this service worker session started. Used to ignore downloads
+// that Chrome resumes/retries from a previous session on browser restart.
+const serviceWorkerStartTime = Date.now();
+
 // --- Logging ---
 
 function log(...args) {
@@ -434,6 +438,15 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     // Restore UI suppression after the fallback download starts
     syncDownloadUi();
     return;
+  }
+
+  // Skip downloads that started before this service worker session (browser restart resumes).
+  if (downloadItem.startTime) {
+    const startMs = new Date(downloadItem.startTime).getTime();
+    if (startMs < serviceWorkerStartTime) {
+      log('Skipping (pre-existing download from previous session):', url);
+      return;
+    }
   }
 
   const config = await getConfig();
