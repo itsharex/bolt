@@ -47,7 +47,7 @@ jobs:
       - name: Build extensions
         run: |
           cd extensions/chrome && zip -r ../../bolt-capture-chrome.zip . -x ".*"
-          cd ../../extensions/firefox && zip -r ../../bolt-capture-firefox.xpi . -x ".*"
+          cd ../../extensions/firefox && zip -r ../../bolt-capture-firefox.zip . -x ".*"
 
       - name: Package tarball
         env:
@@ -91,4 +91,4 @@ jobs:
             --notes-file changelog.md \
             "bolt-linux-amd64-${TAG}.tar.gz" \
             bolt-capture-chrome.zip \
-            bolt-capture-firefox.xpi
+            bolt-capture-firefox.zip

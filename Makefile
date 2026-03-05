@@ -47,7 +47,7 @@ build-extension-chrome:
 
 build-extension-firefox:
 	mkdir -p dist
-	cd extensions/firefox && zip -r ../../dist/bolt-capture-firefox.xpi . -x ".*"
+	cd extensions/firefox && zip -r ../../dist/bolt-capture-firefox.zip . -x ".*"
 
 install: build
 	mkdir -p ~/.local/bin

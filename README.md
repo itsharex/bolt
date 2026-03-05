@@ -73,19 +73,27 @@ systemctl --user enable --now bolt
 
 ## Browser Extension
 
-Bolt ships browser extensions for Chrome and Firefox that intercept downloads and forward them to Bolt. Download the latest extension from [GitHub Releases](https://github.com/fhsinchy/bolt/releases/latest).
+Bolt ships browser extensions for Chrome and Firefox that intercept downloads and forward them to Bolt.
+
+> Submissions to the Chrome Web Store and Firefox Add-ons (AMO) are in progress. In the meantime, you can install the extensions manually.
 
 **Chrome:**
 
-1. Download `bolt-capture-chrome.zip` from the latest release
-2. Open `chrome://extensions` and enable **Developer mode**
-3. Drag and drop the `.zip` file onto the page
+1. Download `bolt-capture-chrome.zip` from the [latest release](https://github.com/fhsinchy/bolt/releases/latest)
+2. Unzip the file
+3. Open `chrome://extensions` and enable **Developer mode**
+4. Click **Load unpacked** and select the unzipped folder
 
 **Firefox:**
 
-1. Download `bolt-capture-firefox.xpi` from the latest release
-2. Open `about:addons`, click the gear icon, and select **Install Add-on From File...**
-3. Select the `.xpi` file
+Firefox requires add-ons to be signed by Mozilla. Until the AMO submission is approved, you can load it temporarily:
+
+1. Download `bolt-capture-firefox.zip` from the [latest release](https://github.com/fhsinchy/bolt/releases/latest) and unzip it
+2. Open `about:debugging#/runtime/this-firefox`
+3. Click **Load Temporary Add-on...**
+4. Select any file inside the unzipped folder
+
+> **Note:** Temporary add-ons are removed when Firefox restarts. A signed version will be available on AMO soon.
 
 The extension popup lets you configure the server URL and auth token. On first install, a welcome page walks you through setup.
 
