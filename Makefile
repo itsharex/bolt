@@ -19,18 +19,23 @@ dev:
 	wails dev -tags webkit2_41
 
 test:
+	@mkdir -p frontend/dist && touch frontend/dist/.gitkeep
 	go test ./... -count=1 -timeout 120s
 
 test-race:
+	@mkdir -p frontend/dist && touch frontend/dist/.gitkeep
 	go test ./... -race -count=1 -timeout 120s
 
 test-v:
+	@mkdir -p frontend/dist && touch frontend/dist/.gitkeep
 	go test ./... -v -count=1 -timeout 120s
 
 test-stress:
+	@mkdir -p frontend/dist && touch frontend/dist/.gitkeep
 	go test -tags=stress ./... -count=1 -timeout 300s
 
 test-cover:
+	@mkdir -p frontend/dist && touch frontend/dist/.gitkeep
 	go test ./... -count=1 -coverprofile=coverage.out -timeout 120s
 	go tool cover -func=coverage.out
 

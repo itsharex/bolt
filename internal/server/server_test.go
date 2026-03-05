@@ -271,6 +271,12 @@ func TestWebSocket(t *testing.T) {
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
+	// Wait for the server-side WebSocket handler to subscribe to the event bus.
+	// Without this, the event may be published before the subscription exists.
+	for te.bus.SubscriberCount() == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	// Publish an event and verify it arrives over WebSocket.
 	te.bus.Publish(event.DownloadAdded{
 		DownloadID: "test-id",

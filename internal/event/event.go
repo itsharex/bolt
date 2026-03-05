@@ -122,6 +122,13 @@ func (b *Bus) Unsubscribe(id int) {
 	}
 }
 
+// SubscriberCount returns the current number of subscribers.
+func (b *Bus) SubscriberCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.subs)
+}
+
 // Publish sends an event to every subscriber. The send is non-blocking: if a
 // subscriber's buffer is full the event is silently dropped for that subscriber.
 func (b *Bus) Publish(event Event) {
