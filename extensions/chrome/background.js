@@ -23,6 +23,11 @@ const BLOCKED_EXTENSIONS = ['.html', '.htm', '.json', '.xml', '.js', '.css'];
 // Track URLs we re-initiated so we don't intercept them again (infinite loop guard).
 const redownloadUrls = new Set();
 
+// URLs detected via Content-Disposition headers (webRequest). Used as a fallback
+// when onCreated doesn't fire for navigation-to-download conversions.
+// Maps URL → { tabId, timestamp }
+const pendingCaptures = new Map();
+
 // Timestamp when this service worker session started. Used to ignore downloads
 // that Chrome resumes/retries from a previous session on browser restart.
 const serviceWorkerStartTime = Date.now();
@@ -448,6 +453,104 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 });
 
+// --- Content-Disposition detection via webRequest ---
+// Detects downloads at the network level. When a navigation response has
+// Content-Disposition: attachment, Chrome may convert the navigation to a
+// download. onCreated should fire for these, but as a fallback (in case it
+// doesn't), we detect them here and handle after a timeout.
+
+chrome.webRequest.onHeadersReceived.addListener(
+  (details) => {
+    if (details.type !== 'main_frame') return;
+
+    const contentDisp = details.responseHeaders?.find(
+      (h) => h.name.toLowerCase() === 'content-disposition',
+    );
+    if (!contentDisp) return;
+
+    const value = contentDisp.value.toLowerCase();
+    if (!value.startsWith('attachment') && !value.includes('filename=')) return;
+
+    const url = details.url;
+    log('Detected Content-Disposition download via headers:', url);
+
+    pendingCaptures.set(url, {
+      tabId: details.tabId,
+      timestamp: Date.now(),
+    });
+
+    // If onCreated doesn't handle this within 3 seconds, handle directly
+    setTimeout(() => {
+      const entry = pendingCaptures.get(url);
+      if (entry) {
+        pendingCaptures.delete(url);
+        log('onCreated did not fire, handling Content-Disposition download directly:', url);
+        handleDirectCapture(url, entry);
+      }
+    }, 3000);
+  },
+  { urls: ['<all_urls>'] },
+  ['responseHeaders'],
+);
+
+async function handleDirectCapture(url, entry) {
+  if (redownloadUrls.has(url)) return;
+
+  const config = await getConfig();
+  if (!config.captureEnabled) return;
+  if (!shouldCapture(url, config)) return;
+
+  const { ok, reason } = await checkBoltReachable(config.serverUrl, config.authToken);
+  if (!ok) {
+    notifyUnreachable(reason);
+    return;
+  }
+
+  const cookieString = await getCookiesForUrl(url);
+  const downloadHeaders = buildDownloadHeaders(cookieString, '', navigator.userAgent);
+
+  let filename = '';
+  try {
+    const parsed = new URL(url);
+    const parts = parsed.pathname.split('/');
+    filename = decodeURIComponent(parts[parts.length - 1] || '');
+  } catch {
+    // ignore
+  }
+
+  try {
+    const candidate = await findRefreshCandidate(config, url, filename);
+    if (candidate) {
+      log('Refresh match found:', candidate.id, candidate.filename);
+      await refreshDownload(config, candidate.id, url, downloadHeaders);
+      showSuccess('Bolt Capture', `Refreshed: ${candidate.filename}`);
+    } else {
+      const body = { url, headers: downloadHeaders };
+      if (filename) body.filename = filename;
+      const result = await sendToBolt(config, body);
+      if (result?.code === 'DUPLICATE_FILENAME') {
+        showSuccess('Bolt Capture', 'Duplicate detected — check Bolt window');
+      } else {
+        showSuccess('Bolt Capture', `Sent to Bolt: ${filename || url}`);
+      }
+    }
+
+    // Try to cancel the browser download after the fact
+    try {
+      const downloads = await chrome.downloads.search({ url, state: 'in_progress' });
+      for (const dl of downloads) {
+        await chrome.downloads.cancel(dl.id);
+        await chrome.downloads.erase({ id: dl.id });
+      }
+    } catch {
+      // Browser download may have completed — user may need to delete it manually
+    }
+  } catch (err) {
+    warn('Direct capture failed:', err.message);
+    showError('Bolt Capture', `Failed: ${err.message}`);
+  }
+}
+
 // --- Download interception (fallback for non-click downloads) ---
 
 chrome.downloads.onCreated.addListener(async (downloadItem) => {
@@ -476,44 +579,54 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
 
   if (!shouldCapture(url, config)) {
     log('Skipping (filtered):', url);
+    pendingCaptures.delete(url);
     return;
   }
 
   // Skip image MIME types (user is viewing, not downloading)
   if (downloadItem.mime && downloadItem.mime.startsWith('image/')) {
     log('Skipping (image MIME type):', url, downloadItem.mime);
+    pendingCaptures.delete(url);
     return;
   }
 
   // Min file size filter
   if (config.minFileSize > 0 && downloadItem.totalBytes > 0 && downloadItem.totalBytes < config.minFileSize) {
     log('Skipping (below min size):', url, downloadItem.totalBytes, '<', config.minFileSize);
+    pendingCaptures.delete(url);
     return;
   }
+
+  // Clear from pending captures — onCreated is handling it
+  pendingCaptures.delete(url);
 
   log('Intercepted download:', url);
 
   // Cancel the browser download IMMEDIATELY to suppress the save dialog / download bar.
   // We check Bolt reachability after; if Bolt is down we re-initiate the browser download.
+  let cancelFailed = false;
   try {
     await chrome.downloads.cancel(downloadItem.id);
     await chrome.downloads.erase({ id: downloadItem.id });
   } catch {
-    // Download may have already completed or been removed
-    warn('Could not cancel browser download (already completed?)');
-    return;
+    // Download may have already completed or is not cancellable.
+    // Continue anyway — send to Bolt even if browser also downloads.
+    warn('Could not cancel browser download — will send to Bolt anyway');
+    cancelFailed = true;
   }
 
-  log('Browser download cancelled, checking Bolt');
+  log(cancelFailed ? 'Could not cancel browser download, checking Bolt' : 'Browser download cancelled, checking Bolt');
 
   // Now verify Bolt is reachable. If not, give the download back to the browser.
   const { ok, reason } = await checkBoltReachable(config.serverUrl, config.authToken);
   if (!ok) {
     log('Bolt not reachable (' + reason + '), re-initiating browser download');
     notifyUnreachable(reason);
-    await chrome.downloads.setUiOptions({ enabled: true });
-    redownloadUrls.add(url);
-    chrome.downloads.download({ url });
+    if (!cancelFailed) {
+      await chrome.downloads.setUiOptions({ enabled: true });
+      redownloadUrls.add(url);
+      chrome.downloads.download({ url });
+    }
     return;
   }
 
@@ -557,11 +670,13 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
       }
     }
   } catch (err) {
-    warn('Send to Bolt failed, re-initiating browser download:', err.message);
+    warn('Send to Bolt failed:', err.message);
     showError('Bolt Capture', `Failed to send to Bolt: ${err.message}`);
-    // Fall back to browser download so the user doesn't lose the file.
-    await chrome.downloads.setUiOptions({ enabled: true });
-    redownloadUrls.add(url);
-    chrome.downloads.download({ url });
+    if (!cancelFailed) {
+      // Fall back to browser download so the user doesn't lose the file.
+      await chrome.downloads.setUiOptions({ enabled: true });
+      redownloadUrls.add(url);
+      chrome.downloads.download({ url });
+    }
   }
 });
