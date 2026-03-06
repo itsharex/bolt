@@ -494,9 +494,21 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
   const referrer = downloadItem.referrer || '';
   const downloadHeaders = buildDownloadHeaders(cookieString, referrer, navigator.userAgent);
 
-  const filename = downloadItem.filename
+  let filename = downloadItem.filename
     ? downloadItem.filename.split('/').pop().split('\\').pop()
     : '';
+
+  // Fall back to extracting filename from URL (downloadItem.filename is often
+  // empty in onCreated because Chrome hasn't resolved it yet).
+  if (!filename) {
+    try {
+      const parsed = new URL(url);
+      const parts = parsed.pathname.split('/');
+      filename = decodeURIComponent(parts[parts.length - 1] || '');
+    } catch {
+      // ignore
+    }
+  }
 
   try {
     // Check for refresh candidate

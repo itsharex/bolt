@@ -11,7 +11,7 @@ const DOWNLOAD_EXTENSIONS = [
   // Disk images
   '.iso', '.img', '.dmg',
   // Programs
-  '.exe', '.msi', '.deb', '.rpm', '.appimage', '.snap', '.flatpak',
+  '.exe', '.msi', '.deb', '.rpm', '.appimage', '.snap', '.flatpak', '.pkg',
   // Documents
   '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp',
   // Media
