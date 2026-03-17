@@ -39,7 +39,7 @@ func (w *segmentWorker) Run(ctx context.Context) error {
 	startByte := w.segment.StartByte + w.segment.Downloaded
 	endByte := w.segment.EndByte
 
-	if startByte > endByte {
+	if endByte >= 0 && startByte > endByte {
 		w.reportCh <- segmentReport{Index: w.segment.Index, Done: true}
 		return nil
 	}
@@ -104,6 +104,12 @@ func (w *segmentWorker) Run(ctx context.Context) error {
 
 		if readErr != nil {
 			if readErr == io.EOF {
+				if w.segment.EndByte < 0 {
+					// Unknown-size download: EOF = done
+					w.segment.Done = true
+					w.reportCh <- segmentReport{Index: w.segment.Index, Done: true}
+					return nil
+				}
 				expectedSize := w.segment.EndByte - w.segment.StartByte + 1
 				if w.segment.Downloaded >= expectedSize {
 					w.segment.Done = true
@@ -116,11 +122,13 @@ func (w *segmentWorker) Run(ctx context.Context) error {
 			return readErr
 		}
 
-		expectedSize := w.segment.EndByte - w.segment.StartByte + 1
-		if w.segment.Downloaded >= expectedSize {
-			w.segment.Done = true
-			w.reportCh <- segmentReport{Index: w.segment.Index, Done: true}
-			return nil
+		if w.segment.EndByte >= 0 {
+			expectedSize := w.segment.EndByte - w.segment.StartByte + 1
+			if w.segment.Downloaded >= expectedSize {
+				w.segment.Done = true
+				w.reportCh <- segmentReport{Index: w.segment.Index, Done: true}
+				return nil
+			}
 		}
 	}
 }

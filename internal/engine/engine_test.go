@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -544,6 +545,60 @@ func TestAddDownload_RedirectChain(t *testing.T) {
 
 	if dl.TotalSize != fileSize {
 		t.Errorf("TotalSize = %d, want %d", dl.TotalSize, fileSize)
+	}
+}
+
+func TestEngine_ProbeRejectedFallback(t *testing.T) {
+	const fileSize = 1024 * 50 // 50 KB
+	ts := testutil.NewTestServer(fileSize, testutil.WithProbeRejection())
+	defer ts.Close()
+
+	eng, _, bus, _ := setupEngine(t)
+	eng.client = ts.Client()
+
+	ch, subID := bus.Subscribe()
+	defer bus.Unsubscribe(subID)
+
+	ctx := context.Background()
+	dl, err := eng.AddDownload(ctx, model.AddRequest{
+		URL:      ts.URL + "/file.bin",
+		Segments: 8,
+	})
+	if err != nil {
+		t.Fatal("AddDownload should succeed with probe fallback:", err)
+	}
+
+	if dl.SegmentCount != 1 {
+		t.Errorf("segment count = %d, want 1", dl.SegmentCount)
+	}
+	if dl.TotalSize != -1 {
+		t.Errorf("total size = %d, want -1 (unknown)", dl.TotalSize)
+	}
+
+	if err := eng.StartDownload(ctx, dl.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case evt := <-ch:
+			if _, ok := evt.(event.DownloadCompleted); ok {
+				// Verify file content
+				filePath := filepath.Join(dl.Dir, dl.Filename)
+				got, _ := os.ReadFile(filePath)
+				want := testutil.GenerateData(fileSize)
+				if !bytes.Equal(got, want) {
+					t.Error("downloaded file content mismatch")
+				}
+				return
+			}
+			if e, ok := evt.(event.DownloadFailed); ok {
+				t.Fatal("download failed:", e.Error)
+			}
+		case <-timeout:
+			t.Fatal("timed out waiting for completion")
+		}
 	}
 }
 

@@ -21,6 +21,7 @@ type serverConfig struct {
 	contentDisposition string
 	redirectURLs       []string
 	statusOverride     int
+	probeRejection     bool
 }
 
 func WithNoRangeSupport() ServerOption {
@@ -47,6 +48,10 @@ func WithStatusOverride(code int) ServerOption {
 	return func(c *serverConfig) { c.statusOverride = code }
 }
 
+func WithProbeRejection() ServerOption {
+	return func(c *serverConfig) { c.probeRejection = true }
+}
+
 // NewTestServer creates an httptest.Server that serves deterministic data of
 // the given size. The data is generated from a seeded PRNG so it can be
 // reproduced for verification. The server supports HEAD requests and byte
@@ -65,6 +70,17 @@ func NewTestServer(size int64, opts ...ServerOption) *httptest.Server {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if cfg.latency > 0 {
 			time.Sleep(cfg.latency)
+		}
+
+		if cfg.probeRejection {
+			if r.Method == http.MethodHead || r.Header.Get("Range") != "" {
+				w.WriteHeader(http.StatusGone)
+				return
+			}
+			// Serve full data without Content-Length (worst case)
+			w.WriteHeader(http.StatusOK)
+			w.Write(data)
+			return
 		}
 
 		if cfg.statusOverride > 0 {

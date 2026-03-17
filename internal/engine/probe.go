@@ -30,8 +30,9 @@ func Probe(ctx context.Context, client *http.Client, rawURL string, headers map[
 }
 
 // probeHEAD performs a HEAD request. It returns (nil, nil) when the server
-// responds with 403 or 405 so that the caller can fall back. Pre-signed
-// URLs (S3, R2) commonly reject HEAD with 403.
+// responds with 403, 401, or 405 so that the caller can fall back to a ranged
+// GET. Pre-signed URLs (S3, R2) commonly reject HEAD with 403. A 410 returns
+// ErrProbeRejected directly to avoid poisoning temporary URLs with a Range GET.
 func probeHEAD(ctx context.Context, client *http.Client, rawURL string, headers map[string]string) (*model.ProbeResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
 	if err != nil {
@@ -45,10 +46,18 @@ func probeHEAD(ctx context.Context, client *http.Client, rawURL string, headers 
 	}
 	defer resp.Body.Close()
 
+	// 410 Gone: server explicitly rejects this resource. Don't fall back
+	// to a ranged GET — hostile servers (1fichier) may treat any Range
+	// request as poisoning the temporary URL. Return ErrProbeRejected so
+	// AddDownload can create a degraded download that uses a plain GET.
+	if resp.StatusCode == http.StatusGone {
+		return nil, fmt.Errorf("%w: HEAD %s returned %d", model.ErrProbeRejected, rawURL, resp.StatusCode)
+	}
+
 	if resp.StatusCode == http.StatusMethodNotAllowed ||
 		resp.StatusCode == http.StatusForbidden ||
 		resp.StatusCode == http.StatusUnauthorized {
-		return nil, nil // signal caller to fall back
+		return nil, nil // signal caller to fall back to ranged GET
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {

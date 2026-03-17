@@ -63,22 +63,50 @@ func filenameFromContentDisposition(cd string) string {
 	return ""
 }
 
-// filenameFromURL extracts the last path segment from a URL, removing any
-// query string and percent-decoding the result.
+// filenameFromURL extracts the best filename from a URL. It first checks the
+// last path segment; if that segment lacks a file extension (no dot), it looks
+// for well-known query parameters (filename, file, name, fname) that many file
+// hosting services use to carry the real filename.
 func filenameFromURL(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return ""
 	}
-	name := path.Base(u.Path)
-	if name == "" || name == "." || name == "/" {
+
+	// Try the URL path segment.
+	pathName := ""
+	if seg := path.Base(u.Path); seg != "" && seg != "." && seg != "/" {
+		decoded, err := url.PathUnescape(seg)
+		if err == nil {
+			pathName = decoded
+		} else {
+			pathName = seg
+		}
+	}
+
+	// If the path segment has a file extension, use it directly.
+	if pathName != "" && strings.ContainsRune(pathName, '.') {
+		return pathName
+	}
+
+	// Check query parameters for filename hints (common in Yandex Disk,
+	// Google Drive, and other file hosting services).
+	for _, param := range []string{"filename", "file", "name", "fname"} {
+		if val := u.Query().Get(param); val != "" {
+			return val
+		}
+	}
+
+	// If the path segment is very long and has no extension, it's almost
+	// certainly a hash/token (CDN proxies, pre-signed URLs), not a real
+	// filename. Return empty so the caller falls through to a clean
+	// fallback like "download_XXXX" instead of a truncated hash.
+	if len(pathName) > 80 {
 		return ""
 	}
-	decoded, err := url.PathUnescape(name)
-	if err != nil {
-		return name
-	}
-	return decoded
+
+	// Fall back to the path segment even without an extension.
+	return pathName
 }
 
 // DeduplicateFilename ensures that the returned filename does not collide

@@ -15,7 +15,10 @@ const DEFAULT_CONFIG = {
 };
 
 // Domains to never intercept (local development, etc.)
-const BLOCKED_DOMAINS = ['localhost', '127.0.0.1', '[::1]'];
+const BLOCKED_DOMAINS = ['localhost', '127.0.0.1', '[::1]', '1fichier.com'];
+
+// Domains where we show a notification explaining why we skipped
+const INCOMPATIBLE_DOMAINS = ['1fichier.com'];
 
 // File extensions to never intercept (web resources)
 const BLOCKED_EXTENSIONS = ['.html', '.htm', '.json', '.xml', '.js', '.css'];
@@ -177,7 +180,10 @@ function shouldCapture(url, config) {
   }
 
   // Skip blocked domains (hardcoded, non-negotiable)
-  if (BLOCKED_DOMAINS.includes(parsed.hostname)) return false;
+  const hostname = parsed.hostname.toLowerCase();
+  for (const domain of BLOCKED_DOMAINS) {
+    if (hostname === domain || hostname.endsWith('.' + domain)) return false;
+  }
 
   // Skip blocked extensions (hardcoded, non-negotiable)
   const path = parsed.pathname.toLowerCase();
@@ -190,7 +196,6 @@ function shouldCapture(url, config) {
 
   // User domain blocklist (with subdomain matching)
   const domainBlocklist = config.domainBlocklist || [];
-  const hostname = parsed.hostname.toLowerCase();
   for (const domain of domainBlocklist) {
     if (hostname === domain || hostname.endsWith('.' + domain)) return false;
   }
@@ -292,6 +297,40 @@ function notifyUnreachable(reason) {
   }
 }
 
+// --- Filename extraction from URL ---
+
+// Mirrors the Go-side filenameFromURL logic: prefer the URL path segment if
+// it has a file extension, otherwise check query parameters (filename, file,
+// name, fname). Skip path segments that are very long with no extension
+// (CDN hashes/tokens).
+function filenameFromURL(url) {
+  try {
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split('/');
+    const lastSeg = decodeURIComponent(segments[segments.length - 1] || '');
+
+    // If the path segment has a file extension, use it.
+    if (lastSeg && lastSeg.includes('.')) {
+      return lastSeg;
+    }
+
+    // Check query parameters for filename hints.
+    for (const param of ['filename', 'file', 'name', 'fname']) {
+      const val = parsed.searchParams.get(param);
+      if (val) return val;
+    }
+
+    // Skip long hash-like segments (>80 chars, no extension).
+    if (lastSeg && lastSeg.length <= 80) {
+      return lastSeg;
+    }
+
+    return '';
+  } catch {
+    return '';
+  }
+}
+
 // --- Build headers for Bolt ---
 
 function buildDownloadHeaders(cookieString, referrerUrl, userAgent) {
@@ -340,14 +379,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     const cookieString = await getCookiesForUrl(url);
     const downloadHeaders = buildDownloadHeaders(cookieString, referrer, navigator.userAgent);
 
-    let filename = '';
-    try {
-      const parsed = new URL(url);
-      const parts = parsed.pathname.split('/');
-      filename = decodeURIComponent(parts[parts.length - 1] || '');
-    } catch {
-      // ignore
-    }
+    const filename = filenameFromURL(url);
 
     try {
       const candidate = await findRefreshCandidate(config, url, filename);
@@ -462,6 +494,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 chrome.webRequest.onHeadersReceived.addListener(
   (details) => {
     if (details.type !== 'main_frame') return;
+
+    // Skip redirect responses — only capture final (2xx) responses.
+    // A 302 redirect may include Content-Disposition headers, but the
+    // download is triggered by the final response, not the redirect.
+    // Without this check, the pre-redirect URL lingers in pendingCaptures
+    // and causes a duplicate capture after the 3s timeout.
+    if (details.statusCode >= 300 && details.statusCode < 400) return;
 
     const contentDisp = details.responseHeaders?.find(
       (h) => h.name.toLowerCase() === 'content-disposition',
@@ -597,8 +636,13 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
     return;
   }
 
-  // Clear from pending captures — onCreated is handling it
+  // Clear from pending captures — onCreated is handling it.
+  // Clear both finalUrl and the original url to handle redirect chains
+  // where onHeadersReceived stored the pre-redirect URL.
   pendingCaptures.delete(url);
+  if (downloadItem.url && downloadItem.url !== url) {
+    pendingCaptures.delete(downloadItem.url);
+  }
 
   log('Intercepted download:', url);
 
@@ -642,13 +686,7 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
   // Fall back to extracting filename from URL (downloadItem.filename is often
   // empty in onCreated because Chrome hasn't resolved it yet).
   if (!filename) {
-    try {
-      const parsed = new URL(url);
-      const parts = parsed.pathname.split('/');
-      filename = decodeURIComponent(parts[parts.length - 1] || '');
-    } catch {
-      // ignore
-    }
+    filename = filenameFromURL(url);
   }
 
   try {

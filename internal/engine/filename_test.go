@@ -105,6 +105,42 @@ func TestDetectFilename_URLWithQuery(t *testing.T) {
 	}
 }
 
+func TestDetectFilename_URLQueryParamFilename(t *testing.T) {
+	// Yandex Disk-style URL: path is a hash, filename is in query param.
+	got := DetectFilename("", "",
+		"https://storage.yandex.net/rdisk/abc123/EbpU6f89Zmm==?filename=The%20Game%20%5BBASE%5D.nsz&disposition=attachment")
+	if got != "The Game [BASE].nsz" {
+		t.Errorf("got %q, want %q", got, "The Game [BASE].nsz")
+	}
+}
+
+func TestDetectFilename_URLQueryParamIgnoredWhenPathHasExtension(t *testing.T) {
+	// When the path has a real extension, query params should not override it.
+	got := DetectFilename("", "",
+		"https://example.com/files/photo.jpg?filename=wrong.png")
+	if got != "photo.jpg" {
+		t.Errorf("got %q, want %q", got, "photo.jpg")
+	}
+}
+
+func TestDetectFilename_URLPathNoExtensionNoQueryParam(t *testing.T) {
+	// Path segment with no extension and no query param — returns path segment.
+	got := DetectFilename("", "", "https://example.com/downloads/abc123")
+	if got != "abc123" {
+		t.Errorf("got %q, want %q", got, "abc123")
+	}
+}
+
+func TestDetectFilename_URLLongHashFallback(t *testing.T) {
+	// CDN proxy URL with a long hash path and no filename info — should
+	// fall through to ULID fallback, not use the truncated hash.
+	longHash := strings.Repeat("aB3xQ", 30) // 150 chars, no extension
+	got := DetectFilename("", "", "https://proxy.example.com/download/"+longHash+"?sig=abc")
+	if !strings.HasPrefix(got, "download_") {
+		t.Errorf("got %q, want prefix %q (long hash should not be used as filename)", got, "download_")
+	}
+}
+
 func TestDeduplicateFilename(t *testing.T) {
 	dir := t.TempDir()
 

@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -108,7 +110,16 @@ func (e *Engine) AddDownload(ctx context.Context, req model.AddRequest) (*model.
 	// Probe the URL
 	probeResult, err := Probe(ctx, e.client, req.URL, req.Headers)
 	if err != nil {
-		return nil, fmt.Errorf("probe: %w", err)
+		if !errors.Is(err, model.ErrProbeRejected) {
+			return nil, fmt.Errorf("probe: %w", err)
+		}
+		slog.Warn("probe rejected, proceeding with minimal metadata",
+			"url", req.URL, "error", err)
+		probeResult = &model.ProbeResult{
+			TotalSize:     -1,
+			AcceptsRanges: false,
+			FinalURL:      req.URL,
+		}
 	}
 
 	// Detect filename
@@ -613,7 +624,7 @@ func computeSegments(downloadID string, totalSize int64, count int) []model.Segm
 			DownloadID: downloadID,
 			Index:      0,
 			StartByte:  0,
-			EndByte:    0, // will be updated as we download
+			EndByte:    -1, // sentinel: read until EOF
 		}}
 	}
 
